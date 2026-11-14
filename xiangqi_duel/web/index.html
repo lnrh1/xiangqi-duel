@@ -2201,7 +2201,9 @@
     $('side-red-label').textContent = entryLabel(lobby.red);
     $('side-black-label').textContent = entryLabel(lobby.black);
     var bothHuman = lobby.red && lobby.black && lobby.red.kind === 'human' && lobby.black.kind === 'human';
-    $('lobby-start').disabled = !(lobby.red && lobby.black) || bothHuman;
+    var noHuman = lobby.mode === 'human' && lobby.red && lobby.black &&
+      lobby.red.kind !== 'human' && lobby.black.kind !== 'human';
+    $('lobby-start').disabled = !(lobby.red && lobby.black) || bothHuman || noHuman;
   }
 
   function openLobby(mode) {
