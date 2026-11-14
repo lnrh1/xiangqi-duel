@@ -278,6 +278,7 @@ class Game:
         )
         material = self.material()
         return {
+            "start_fen": self.start_fen,
             "fen": self.board.to_fen(
                 self.turn, self.halfmove_clock, self.fullmove
             ),

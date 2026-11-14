@@ -136,6 +136,10 @@
     box-shadow: 0 3px 8px rgba(0,0,0,.4), inset 0 0 0 3px rgba(0,0,0,.12);
   }
   .piece.selected { transform: translate(-50%, -50%) scale(1.07); box-shadow: 0 0 0 4px var(--accent), 0 6px 16px rgba(0,0,0,.45); }
+  .piece.animating {
+    z-index: 7;
+    transition: left .34s cubic-bezier(.22, .9, .25, 1), top .34s cubic-bezier(.22, .9, .25, 1);
+  }
   .piece.movable { cursor: pointer; }
   .marker {
     position: absolute; width: 9%; aspect-ratio: 1; transform: translate(-50%, -50%);
@@ -532,6 +536,10 @@
     sound: false,
     pendingMove: false,
     pendingPly: -1,
+    hoverRow: null,
+    hoverTimer: 0,
+    hoverActive: false,
+    hoverAnim: null,
     replay: { active: false, log: null, timeline: [], index: 0 }
   };
 
@@ -604,6 +612,7 @@
     if (state.replay && state.replay.active) { return; }
     state.snapshot = snap;
     if (!snap) { return; }
+    if (state.hoverActive) { return; }
     if (snap.match_id !== state.matchId) {
       state.matchId = snap.match_id;
       state.fxReady = false;
@@ -783,9 +792,9 @@
     var list = $('move-list');
     var moves = snap.moves || [];
     var html = '';
-    moves.forEach(function (move) {
+    moves.forEach(function (move, index) {
       var side = move.side === 'red' ? '红' : '黑';
-      html += '<li><span class="ply">' + move.ply + '</span>' +
+      html += '<li data-index="' + index + '"><span class="ply">' + move.ply + '</span>' +
         '<span class="chip ' + move.side + '">' + side + '</span>' +
         '<span class="notation">' + esc(move.notation) + (move.capture ? ' 吃' : '') + '</span>' +
         (move.comment && snap.mode === 'aivai' ? '<span class="note">' + esc(move.comment) + '</span>' : '') +
@@ -1022,6 +1031,7 @@
   }
 
   async function startMatch() {
+    stopHoverAnimation(true);
     if (state.replay && state.replay.active) {
       state.replay.active = false;
       $('replay-bar').classList.add('hidden');
@@ -1617,6 +1627,7 @@
   }
 
   async function enterReplay() {
+    stopHoverAnimation(true);
     var log;
     try {
       log = await api('/api/log');
@@ -1739,8 +1750,8 @@
   function renderReplayMoves(currentPly) {
     var list = $('move-list');
     var html = '';
-    (state.replay.log.moves || []).forEach(function (move) {
-      html += '<li data-ply="' + move.ply + '" class="' + (move.ply === currentPly ? 'active' : '') + '">' +
+    (state.replay.log.moves || []).forEach(function (move, index) {
+      html += '<li data-ply="' + move.ply + '" data-index="' + index + '" class="' + (move.ply === currentPly ? 'active' : '') + '">' +
         '<span class="ply">' + move.ply + '</span>' +
         '<span class="chip ' + move.side + '">' + (move.side === 'red' ? '红' : '黑') + '</span>' +
         '<span class="notation">' + esc(move.notation) + (move.capture ? ' 吃' : '') + '</span>' +
@@ -1750,6 +1761,95 @@
     list.innerHTML = html;
     var active = list.querySelector('li.active');
     if (active) { active.scrollIntoView({ block: 'nearest' }); }
+  }
+
+  // --------------------------------------------------------------- move hover
+  function hoverMoveData(li) {
+    var index = parseInt(li.getAttribute('data-index'), 10);
+    var rp = state.replay;
+    var replaying = rp && rp.active;
+    var moves = replaying ? (rp.log.moves || []) : (state.snapshot ? state.snapshot.moves || [] : []);
+    var startFen = replaying ? rp.log.start_fen : (state.snapshot ? state.snapshot.start_fen : null);
+    if (!startFen || !moves.length || isNaN(index) || index < 0 || index >= moves.length) {
+      return null;
+    }
+    return {
+      move: moves[index],
+      beforeFen: index === 0 ? startFen : moves[index - 1].fen
+    };
+  }
+
+  function restoreHoverBoard() {
+    var anim = state.hoverAnim;
+    state.hoverAnim = null;
+    state.hoverActive = false;
+    if (anim) {
+      clearTimeout(anim.arriveTimer);
+      clearTimeout(anim.loopTimer);
+    }
+    if (state.replay && state.replay.active) {
+      renderReplay();
+    } else if (state.snapshot) {
+      applySnapshot(state.snapshot);
+    }
+  }
+
+  function animateHoverCycle() {
+    var anim = state.hoverAnim;
+    if (!anim || anim.stop) { return; }
+    var move = anim.data.move;
+    renderPiecesFromFen(anim.data.beforeFen, null);
+    var piece = piecesLayer.querySelector('[data-id="' + move.piece_id + '"]');
+    if (!piece) { restoreHoverBoard(); return; }
+    piece.classList.add('animating');
+    var tx = 'abcdefghi'.indexOf(move.to.charAt(0));
+    var ty = parseInt(move.to.slice(1), 10);
+    anim.running = true;
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        piece.style.left = leftFor(tx) + '%';
+        piece.style.top = topFor(ty) + '%';
+      });
+    });
+    anim.arriveTimer = setTimeout(function () {
+      anim.running = false;
+      anim.arriveTimer = 0;
+      piece.classList.remove('animating');
+      if (move.capture) {
+        var captured = piecesLayer.querySelector('[data-id="' + move.capture + '"]');
+        if (captured) { captured.remove(); }
+      }
+      if (anim.stop) { restoreHoverBoard(); return; }
+      anim.loopTimer = setTimeout(function () {
+        anim.loopTimer = 0;
+        if (anim.stop) { restoreHoverBoard(); return; }
+        animateHoverCycle();
+      }, 650);
+    }, 380);
+  }
+
+  function startHoverAnimation(li) {
+    var data = hoverMoveData(li);
+    if (!data) { return; }
+    state.hoverActive = true;
+    state.hoverAnim = { stop: false, running: false, arriveTimer: 0, loopTimer: 0, data: data };
+    animateHoverCycle();
+  }
+
+  function stopHoverAnimation(immediate) {
+    clearTimeout(state.hoverTimer);
+    var anim = state.hoverAnim;
+    if (!anim) { return; }
+    if (immediate) {
+      restoreHoverBoard();
+      return;
+    }
+    anim.stop = true;
+    if (!anim.running) {
+      clearTimeout(anim.loopTimer);
+      anim.loopTimer = 0;
+      restoreHoverBoard();
+    }
   }
 
   // --------------------------------------------------------------------- init
@@ -1785,6 +1885,19 @@
       var ply = parseInt(li.getAttribute('data-ply'), 10);
       var idx = moveTimelineIndex(ply);
       if (idx >= 0) { state.replay.index = idx; renderReplay(); }
+    });
+
+    $('move-list').addEventListener('mouseover', function (event) {
+      var li = event.target.closest('li[data-index]');
+      if (!li || li === state.hoverRow) { return; }
+      stopHoverAnimation(true);
+      state.hoverRow = li;
+      clearTimeout(state.hoverTimer);
+      state.hoverTimer = setTimeout(function () { startHoverAnimation(li); }, 1000);
+    });
+    $('move-list').addEventListener('mouseleave', function () {
+      state.hoverRow = null;
+      stopHoverAnimation(false);
     });
     document.addEventListener('keydown', function (event) {
       if (!state.replay || !state.replay.active) { return; }
