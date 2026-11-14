@@ -85,5 +85,4 @@ Restart=always
 RestartSec=5
 ```
 
-这样外部访问 `http://<转发机>:8765` 时，浏览器会弹出 Basic 认证框，密码就是
-`XIANGQI_DUEL_PASSWORD` 的值。未认证时接口全部返回 401，只有 `/api/health` 开放。
+这样外部访问 `http://<转发机>:8765` 时，浏览器会弹出 Basic 认证框，用 `XIANGQI_DUEL_USER` / `XIANGQI_DUEL_PASSWORD` 登录。未认证时接口全部返回 401，只有 `/api/health` 开放。

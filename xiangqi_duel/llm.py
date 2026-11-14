@@ -408,6 +408,64 @@ def _to_anthropic_messages(messages):
     return merged
 
 
+def _get_json(url, headers, timeout, attempts=2):
+    last_error = None
+    for attempt in range(attempts):
+        request = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            last_error = LLMError("HTTP %s: %s" % (exc.code, detail), status=exc.code)
+            if exc.code in RETRY_STATUS and attempt < attempts - 1:
+                time.sleep(1.2)
+                continue
+            raise last_error
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
+            last_error = LLMError("cannot reach %s: %s" % (url, exc))
+            if attempt < attempts - 1:
+                time.sleep(1.2)
+                continue
+            raise last_error
+    raise last_error or LLMError("request failed")
+
+
+def list_models(provider, base_url="", api_key="", timeout=20.0):
+    """Ask a provider for its model list (OpenAI /models or Anthropic /v1/models)."""
+    preset = PRESETS.get(provider, {}) or {}
+    config = ProviderConfig(
+        provider=provider,
+        base_url=base_url or preset.get("base_url", ""),
+        api_key=api_key or "",
+    ).resolved()
+    base = (config.base_url or "").rstrip("/")
+    if not base:
+        raise LLMError("缺少 base_url，无法获取模型列表")
+    kind = preset.get("kind", "openai")
+    headers = {"Accept": "application/json"}
+    if kind == "anthropic":
+        url = base + "/v1/models"
+        headers["anthropic-version"] = "2023-06-01"
+        if config.api_key:
+            headers["x-api-key"] = config.api_key
+    else:
+        url = base + "/models"
+        if config.api_key:
+            headers["Authorization"] = "Bearer " + config.api_key
+    data = _get_json(url, headers, timeout)
+    items = data.get("data") or data.get("models") or []
+    found = set()
+    for item in items:
+        if isinstance(item, str):
+            found.add(item)
+        elif isinstance(item, dict):
+            name = item.get("id") or item.get("name")
+            if name:
+                found.add(str(name))
+    return sorted(found)
+
+
 def make_client(config):
     config = config.resolved()
     preset = PRESETS.get(config.provider, {})

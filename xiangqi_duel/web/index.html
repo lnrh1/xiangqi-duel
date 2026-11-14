@@ -216,7 +216,15 @@
   .model-row .actions button { padding: 4px 9px; font-size: 12px; border-radius: 7px; }
   .model-row .test-ok { color: var(--ok); font-size: 12px; }
   .model-row .test-bad { color: var(--error); font-size: 12px; }
-  .add-model { display: grid; grid-template-columns: 152px 1.2fr 1.2fr .9fr auto; gap: 8px; margin-top: 12px; }
+  .add-model { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .add-model input, .add-model select { flex: 1 1 150px; }
+  .add-model button { flex: none; }
+  .suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .suggestion {
+    padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: #1d1813; color: var(--text); font-size: 12px; cursor: pointer;
+  }
+  .suggestion:hover { border-color: var(--accent); color: var(--accent); }
   .add-model input, .add-model select, .side-config input, .side-config select {
     background: #191410; border: 1px solid var(--line); color: var(--text);
     padding: 9px 10px; border-radius: 9px; outline: none; min-width: 0;
@@ -284,6 +292,20 @@
     100% { transform: scale(13); opacity: 0; }
   }
   .fx-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .replay-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    width: min(66vh, 100%); padding: 10px 12px; border-radius: 12px;
+    background: var(--panel-2); border: 1px solid var(--line);
+  }
+  .replay-bar.hidden { display: none; }
+  .replay-bar .hint { margin-left: auto; }
+  .marker.last { pointer-events: none; }
+  .marker.last::after { width: 30%; background: rgba(217, 164, 65, .8); box-shadow: 0 0 0 2px rgba(255,255,255,.3); }
+  .replay-sep {
+    color: var(--muted); font-size: 12px; letter-spacing: .2em;
+    border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 6px;
+  }
+  .moves li.active { background: rgba(217, 164, 65, .18); }
   .board.shake { animation: boardShake .55s cubic-bezier(.36, .07, .19, .97) both; }
   @keyframes boardShake {
     10%, 90% { transform: translate(-2px, 1px); }
@@ -322,6 +344,7 @@
   <div class="top-actions">
     <button id="btn-new" class="btn primary">新对局</button>
     <button id="btn-resign" class="btn hidden">认输</button>
+    <button id="btn-replay" class="btn">复盘</button>
     <button id="btn-sound" class="btn">音效 关</button>
     <button id="btn-stop" class="btn">停止</button>
   </div>
@@ -342,6 +365,14 @@
       <span id="check-text"></span>
       <span class="spacer"></span>
       <span id="material-text"></span>
+    </div>
+    <div class="replay-bar hidden" id="replay-bar">
+      <button class="btn" id="rp-first">开局</button>
+      <button class="btn" id="rp-prev">上一步</button>
+      <button class="btn primary" id="rp-next">下一步</button>
+      <button class="btn" id="rp-last">终局</button>
+      <span class="hint" id="rp-info"></span>
+      <button class="btn" id="rp-exit">退出复盘</button>
     </div>
   </section>
 
@@ -388,11 +419,14 @@
       <div class="model-list" id="model-list"></div>
       <div class="add-model">
         <select id="add-provider"></select>
-        <input id="add-model" placeholder="模型名，如 deepseek-chat">
+        <input id="add-base-url" placeholder="base_url（可选，自定义必填）">
         <input id="add-key" type="password" placeholder="API Key">
+        <input id="add-model" placeholder="模型名，如 deepseek-chat">
         <input id="add-label" placeholder="备注（可选）">
-        <button class="btn" id="btn-add-model">添加</button>
+        <button class="btn" id="btn-discover">获取模型</button>
+        <button class="btn primary" id="btn-add-model">添加</button>
       </div>
+      <div class="suggestions" id="model-suggestions"></div>
       <p class="hint" id="add-result"></p>
     </section>
 
@@ -435,7 +469,8 @@
     mateShown: false,
     sound: false,
     pendingMove: false,
-    pendingPly: -1
+    pendingPly: -1,
+    replay: { active: false, log: null, timeline: [], index: 0 }
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -504,6 +539,7 @@
 
   // ---------------------------------------------------------------- rendering
   function applySnapshot(snap) {
+    if (state.replay && state.replay.active) { return; }
     state.snapshot = snap;
     if (!snap) { return; }
     if (snap.match_id !== state.matchId) {
@@ -741,6 +777,7 @@
   function handleSquare(name) {
     var snap = state.snapshot;
     if (!snap || snap.mode !== 'human' || snap.status !== 'playing' || snap.turn !== snap.human_side) { return; }
+    if (state.replay && state.replay.active) { return; }
     if (state.pendingMove) { return; }
     var legal = (snap.legal || {})[state.selected];
     if (state.selected && legal && legal.indexOf(name) !== -1) {
@@ -781,7 +818,7 @@
     var html = '';
     state.providers.forEach(function (provider) {
       if (provider.name === 'engine') { return; }
-      html += '<option value="' + provider.name + '">' + provider.name + (provider.model ? '（' + provider.model + '）' : '') + '</option>';
+      html += '<option value="' + provider.name + '">' + provider.name + '</option>';
     });
     html += '<option value="custom">自定义 base_url</option>';
     select.innerHTML = html;
@@ -792,8 +829,14 @@
     var name = $('add-provider').value;
     var provider = state.providers.filter(function (p) { return p.name === name; })[0];
     var input = $('add-model');
-    if (provider) { input.value = provider.model || ''; input.placeholder = provider.model || '模型名'; }
-    else { input.placeholder = '模型名'; }
+    var baseInput = $('add-base-url');
+    if (provider) {
+      input.placeholder = '模型名（可点「获取模型」）';
+      baseInput.placeholder = provider.base_url || 'base_url（可选，自定义必填）';
+    } else {
+      input.placeholder = '模型名';
+      baseInput.placeholder = 'base_url（必填）';
+    }
   }
 
   function renderModelList() {
@@ -851,6 +894,10 @@
   }
 
   async function startMatch() {
+    if (state.replay && state.replay.active) {
+      state.replay.active = false;
+      $('replay-bar').classList.add('hidden');
+    }
     var red = specFor(redSelect.value);
     var black = specFor(blackSelect.value);
     var humanSide = null;
@@ -919,12 +966,41 @@
     });
   }
 
+  async function discoverModels() {
+    var provider = $('add-provider').value;
+    var baseUrl = $('add-base-url').value.trim();
+    var key = $('add-key').value.trim();
+    var box = $('model-suggestions');
+    box.innerHTML = '<span class="hint">获取中…</span>';
+    try {
+      var data = await api('/api/models/discover', {
+        method: 'POST',
+        body: { provider: provider, base_url: baseUrl, api_key: key }
+      });
+      var models = data.models || [];
+      if (!models.length) {
+        box.innerHTML = '<span class="hint">该提供商没有返回模型列表</span>';
+        return;
+      }
+      box.innerHTML = models.map(function (id) {
+        return '<button type="button" class="suggestion" data-model-id="' + esc(id) + '">' + esc(id) + '</button>';
+      }).join('');
+      $('add-result').textContent = '共 ' + models.length + ' 个模型，点一下填入';
+      $('add-result').className = 'hint';
+    } catch (err) {
+      box.innerHTML = '';
+      $('add-result').textContent = err.message;
+      $('add-result').className = 'hint error';
+    }
+  }
+
   async function addModel() {
     var provider = $('add-provider').value;
     var payload = {
       provider: provider,
       model: $('add-model').value.trim(),
       api_key: $('add-key').value.trim(),
+      base_url: $('add-base-url').value.trim(),
       label: $('add-label').value.trim()
     };
     if (provider === 'custom') {
@@ -1240,8 +1316,196 @@
     }
   }
 
+  // ------------------------------------------------------------------ replay
+  var FEN_LETTERS = { r: 'chariot', n: 'horse', b: 'elephant', a: 'advisor', k: 'general', c: 'cannon', p: 'soldier' };
+  var GLYPHS = {
+    red: { general: '帥', advisor: '仕', elephant: '相', horse: '馬', chariot: '車', cannon: '炮', soldier: '兵' },
+    black: { general: '將', advisor: '士', elephant: '象', horse: '馬', chariot: '車', cannon: '砲', soldier: '卒' }
+  };
+
+  function renderPiecesFromFen(fen, lastMove) {
+    var rows = String(fen || '').split(' ')[0].split('/');
+    var layer = piecesLayer;
+    layer.innerHTML = '';
+    for (var row = 0; row < rows.length; row += 1) {
+      var y = 9 - row;
+      var x = 0;
+      var line = rows[row] || '9';
+      for (var i = 0; i < line.length; i += 1) {
+        var ch = line.charAt(i);
+        if (ch >= '0' && ch <= '9') { x += parseInt(ch, 10); continue; }
+        var color = ch === ch.toUpperCase() ? 'red' : 'black';
+        var type = FEN_LETTERS[ch.toLowerCase()];
+        if (!type) { x += 1; continue; }
+        var el = document.createElement('div');
+        el.className = 'piece ' + color;
+        el.style.left = leftFor(x) + '%';
+        el.style.top = topFor(y) + '%';
+        var span = document.createElement('span');
+        span.textContent = GLYPHS[color][type];
+        el.appendChild(span);
+        layer.appendChild(el);
+        x += 1;
+      }
+    }
+    markersLayer.innerHTML = '';
+    if (lastMove) {
+      [lastMove.from, lastMove.to].forEach(function (name) {
+        var mx = 'abcdefghi'.indexOf(name.charAt(0));
+        var my = parseInt(name.slice(1), 10);
+        var dot = document.createElement('div');
+        dot.className = 'marker last';
+        dot.style.left = leftFor(mx) + '%';
+        dot.style.top = topFor(my) + '%';
+        markersLayer.appendChild(dot);
+      });
+    }
+  }
+
+  function buildReplayTimeline(log) {
+    var timeline = [{ type: 'start', fen: log.start_fen }];
+    var byPly = {};
+    (log.trace || []).forEach(function (entry) {
+      if (entry.kind === 'llm_step') { return; }
+      var ply = entry.ply || 0;
+      (byPly[ply] = byPly[ply] || []).push(entry);
+    });
+    (log.moves || []).forEach(function (move) {
+      (byPly[move.ply] || []).forEach(function (entry) { timeline.push({ type: 'trace', entry: entry }); });
+      timeline.push({ type: 'move', move: move });
+    });
+    return timeline;
+  }
+
+  async function enterReplay() {
+    var log;
+    try {
+      log = await api('/api/log');
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+    if (!log || !log.moves || !log.moves.length) {
+      toast('还没有可以复盘的对局');
+      return;
+    }
+    state.replay = { active: true, log: log, timeline: buildReplayTimeline(log), index: 0 };
+    state.selected = null;
+    $('replay-bar').classList.remove('hidden');
+    switchTab('trace');
+    renderReplay();
+  }
+
+  function exitReplay() {
+    if (!state.replay || !state.replay.active) { return; }
+    state.replay.active = false;
+    $('replay-bar').classList.add('hidden');
+    refreshState();
+  }
+
+  function replayStep(delta) {
+    if (!state.replay || !state.replay.active) { return; }
+    var max = state.replay.timeline.length - 1;
+    state.replay.index = Math.max(0, Math.min(max, state.replay.index + delta));
+    renderReplay();
+  }
+
+  function moveTimelineIndex(ply) {
+    var timeline = state.replay.timeline;
+    for (var i = 0; i < timeline.length; i += 1) {
+      if (timeline[i].type === 'move' && timeline[i].move.ply === ply) { return i; }
+    }
+    return -1;
+  }
+
+  function renderReplay() {
+    if (!state.replay || !state.replay.active) { return; }
+    var rp = state.replay;
+    var fen = rp.log.start_fen;
+    var lastMove = null;
+    var ply = 0;
+    var shown = [];
+    for (var i = 0; i <= rp.index && i < rp.timeline.length; i += 1) {
+      var item = rp.timeline[i];
+      if (item.type === 'move') {
+        fen = item.move.fen;
+        lastMove = item.move;
+        ply = item.move.ply;
+      } else if (item.type === 'trace') {
+        shown.push(item.entry);
+      }
+    }
+    renderPiecesFromFen(fen, lastMove);
+    renderReplayTrace(shown);
+    renderReplayMoves(ply);
+    var info = rp.index === 0 ? '开局' : ('第 ' + ply + ' 手 / 共 ' + rp.log.moves.length + ' 手');
+    $('rp-info').textContent = info + ' · 步骤 ' + rp.index + ' / ' + (rp.timeline.length - 1);
+    $('turn-text').textContent = '复盘：' + info;
+    $('check-text').textContent = '';
+    $('material-text').textContent = '';
+    $('turn-dot').className = 'dot';
+  }
+
+  function renderReplayTrace(entries) {
+    var list = $('trace-list');
+    if (!entries.length) {
+      list.innerHTML = '<p class="empty">这一步还没有内部记录，点「下一步」继续</p>';
+      return;
+    }
+    var html = '';
+    var lastPly = -1;
+    entries.forEach(function (entry) {
+      if (entry.ply !== lastPly) {
+        html += '<div class="replay-sep">第 ' + (entry.ply || '?') + ' 手</div>';
+        lastPly = entry.ply;
+      }
+      html += traceItemHtml(entry);
+    });
+    list.innerHTML = html;
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function renderReplayMoves(currentPly) {
+    var list = $('move-list');
+    var html = '';
+    (state.replay.log.moves || []).forEach(function (move) {
+      html += '<li data-ply="' + move.ply + '" class="' + (move.ply === currentPly ? 'active' : '') + '">' +
+        '<span class="ply">' + move.ply + '</span>' +
+        '<span class="chip ' + move.side + '">' + (move.side === 'red' ? '红' : '黑') + '</span>' +
+        '<span class="notation">' + esc(move.notation) + (move.capture ? ' 吃' : '') + '</span>' +
+        (move.comment ? '<span class="note">' + esc(move.comment) + '</span>' : '') +
+        '</li>';
+    });
+    list.innerHTML = html;
+    var active = list.querySelector('li.active');
+    if (active) { active.scrollIntoView({ block: 'nearest' }); }
+  }
+
   // --------------------------------------------------------------------- init
   function bindEvents() {
+    $('btn-replay').addEventListener('click', enterReplay);
+    $('rp-first').addEventListener('click', function () {
+      if (state.replay.active) { state.replay.index = 0; renderReplay(); }
+    });
+    $('rp-prev').addEventListener('click', function () { replayStep(-1); });
+    $('rp-next').addEventListener('click', function () { replayStep(1); });
+    $('rp-last').addEventListener('click', function () {
+      if (state.replay.active) { state.replay.index = state.replay.timeline.length - 1; renderReplay(); }
+    });
+    $('rp-exit').addEventListener('click', exitReplay);
+    $('move-list').addEventListener('click', function (event) {
+      if (!state.replay || !state.replay.active) { return; }
+      var li = event.target.closest('li[data-ply]');
+      if (!li) { return; }
+      var ply = parseInt(li.getAttribute('data-ply'), 10);
+      var idx = moveTimelineIndex(ply);
+      if (idx >= 0) { state.replay.index = idx; renderReplay(); }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (!state.replay || !state.replay.active) { return; }
+      if (event.key === 'ArrowLeft') { replayStep(-1); }
+      if (event.key === 'ArrowRight') { replayStep(1); }
+    });
     $('btn-new').addEventListener('click', openSetup);
     $('setup-close').addEventListener('click', closeSetup);
     $('setup').addEventListener('click', function (event) {
@@ -1249,7 +1513,14 @@
     });
     $('btn-start').addEventListener('click', startMatch);
     $('btn-add-model').addEventListener('click', addModel);
+    $('btn-discover').addEventListener('click', discoverModels);
     $('add-provider').addEventListener('change', updateModelPlaceholder);
+    $('model-suggestions').addEventListener('click', function (event) {
+      var chip = event.target.closest('.suggestion');
+      if (!chip) { return; }
+      $('add-model').value = chip.getAttribute('data-model-id');
+      $('add-model').focus();
+    });
 
     $('model-list').addEventListener('click', function (event) {
       var testId = event.target.getAttribute('data-test');
@@ -1350,6 +1621,19 @@
     if (params.get('setup') === '1') { openSetup(); }
     var wantedTab = params.get('tab');
     if (wantedTab === 'chat' || wantedTab === 'trace') { switchTab(wantedTab); }
+    var replayParam = params.get('replay');
+    if (replayParam) {
+      setTimeout(function () {
+        enterReplay().then(function () {
+          if (!state.replay.active) { return; }
+          var step = parseInt(replayParam, 10);
+          if (!isNaN(step)) {
+            state.replay.index = Math.max(0, Math.min(step, state.replay.timeline.length - 1));
+            renderReplay();
+          }
+        });
+      }, 350);
+    }
     var fxParam = params.get('fx');
     if (fxParam === 'check') {
       setTimeout(function () { playCheckFx(state.snapshot); }, 350);

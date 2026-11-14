@@ -187,10 +187,13 @@ class Match:
 
     def _record_trace(self, event):
         kind = event.get("type")
+        with self.lock:
+            ply = len(self.game.history) + 1
         entry = {
             "id": len(self.trace) + 1,
             "side": event.get("side"),
             "kind": kind,
+            "ply": ply,
             "at": event.get("at", time.time()),
         }
         if kind == "thinking":

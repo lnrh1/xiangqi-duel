@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from . import __version__
 from .arena import Match, PlayerSpec
 from .game import IllegalMove
-from .llm import PRESETS
+from .llm import LLMError, PRESETS, list_models
 from .models import DEFAULT_HOME, ModelRegistry, RegistryError
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -276,6 +276,16 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.state.registry.test(model_id)
                 self._json(result)
             except (RegistryError, Exception) as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/models/discover":
+            try:
+                models = list_models(
+                    body.get("provider", ""),
+                    body.get("base_url", ""),
+                    body.get("api_key", ""),
+                )
+                self._json({"ok": True, "models": models})
+            except (LLMError, ValueError) as exc:
                 self._json({"ok": False, "error": str(exc)}, status=400)
         elif path == "/api/new":
             self._new_match(body)
