@@ -192,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
     # -------------------------------------------------------------------- GET
     def do_GET(self):
         path = urlparse(self.path).path
-        if path != "/api/health" and not self._require_auth():
+        if path not in ("/api/health", "/favicon.svg") and not self._require_auth():
             return
         if path in ("/", "/index.html"):
             self._static("index.html")
@@ -233,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         path = urlparse(self.path).path
-        if path != "/api/health" and not self._require_auth():
+        if path not in ("/api/health", "/favicon.svg") and not self._require_auth():
             return
         if path in ("/", "/index.html"):
             try:
