@@ -1,0 +1,373 @@
+"""本地 Web 服务：观战、人机对弈与模型库管理。"""
+from __future__ import annotations
+
+import json
+import os
+import queue
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
+
+from . import __version__
+from .arena import Match, PlayerSpec
+from .game import IllegalMove
+from .llm import PRESETS
+from .models import DEFAULT_HOME, ModelRegistry, RegistryError
+
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+MAX_BODY = 256 * 1024
+
+
+def provider_catalog():
+    catalog = []
+    for name, preset in PRESETS.items():
+        catalog.append(
+            {
+                "name": name,
+                "kind": preset.get("kind"),
+                "base_url": preset.get("base_url", ""),
+                "model": preset.get("model", ""),
+                "env": list(preset.get("env", ())),
+            }
+        )
+    return catalog
+
+
+class AppState:
+    def __init__(self, registry=None, games_dir=None):
+        self.registry = registry or ModelRegistry()
+        self.games_dir = games_dir or os.path.join(DEFAULT_HOME, "games")
+        self.lock = threading.RLock()
+        self.match = None
+        self.saved = {}
+
+    # --------------------------------------------------------------- matches
+    def current(self):
+        with self.lock:
+            return self.match
+
+    def set_match(self, match):
+        with self.lock:
+            self.match = match
+
+    def stop_match(self):
+        match = self.current()
+        if match is not None:
+            match.stop("已开始新对局")
+        return match
+
+    def spec_for(self, data):
+        data = dict(data or {})
+        kind = data.get("kind") or "engine"
+        if kind == "human":
+            return PlayerSpec(kind="human")
+        if kind in ("engine", "local"):
+            try:
+                depth = int(data.get("depth") or 3)
+            except (TypeError, ValueError):
+                depth = 3
+            return PlayerSpec(kind="engine", depth=max(1, min(depth, 6)))
+        model_id = data.get("model_id")
+        if not model_id:
+            raise ValueError("请先选择一个模型，或选择本地引擎")
+        entry = self.registry.get(model_id)
+        return PlayerSpec(
+            kind="llm",
+            provider=entry.get("provider", ""),
+            model=entry.get("model", ""),
+            api_key=entry.get("api_key", ""),
+            base_url=entry.get("base_url", ""),
+            temperature=entry.get("temperature", 0.6),
+            label=entry.get("label", ""),
+        )
+
+    # ------------------------------------------------------------- game files
+    def maybe_save(self, match):
+        if match is None or match.finished_at is None:
+            return
+        with self.lock:
+            if match.id in self.saved:
+                return
+            os.makedirs(self.games_dir, exist_ok=True)
+            path = os.path.join(self.games_dir, "%s-%s.json" % (time.strftime("%Y%m%d-%H%M%S"), match.id))
+            try:
+                with open(path, "w", encoding="utf-8") as handle:
+                    json.dump(match.log(), handle, ensure_ascii=False, indent=2)
+                self.saved[match.id] = path
+                match.saved_path = path
+            except OSError:
+                pass
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "XiangqiDuel/" + __version__
+
+    # ------------------------------------------------------------- utilities
+    @property
+    def state(self):
+        return self.server.app
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def _json(self, payload, status=200):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0:
+            return {}
+        if length > MAX_BODY:
+            raise ValueError("request body too large")
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except ValueError:
+            raise ValueError("body is not valid JSON")
+
+    def _static(self, name):
+        path = os.path.join(WEB_DIR, name)
+        try:
+            with open(path, "rb") as handle:
+                body = handle.read()
+        except OSError:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        suffix = os.path.splitext(name)[1]
+        content_type = {
+            ".html": "text/html; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+        }.get(suffix, "application/octet-stream")
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    # -------------------------------------------------------------------- GET
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._static("index.html")
+        elif path == "/api/health":
+            self._json({"ok": True, "version": __version__})
+        elif path == "/api/models":
+            self._json(
+                {
+                    "ok": True,
+                    "models": self.state.registry.public(),
+                    "providers": provider_catalog(),
+                    "home": DEFAULT_HOME,
+                }
+            )
+        elif path == "/api/state":
+            match = self.state.current()
+            if match is not None:
+                self.state.maybe_save(match)
+            self._json(
+                {
+                    "ok": True,
+                    "snapshot": match.snapshot() if match is not None else None,
+                    "version": __version__,
+                }
+            )
+        elif path == "/api/log":
+            match = self.state.current()
+            self._json(match.log() if match is not None else {"ok": False, "error": "no match"})
+        elif path == "/api/events":
+            self._events()
+        elif path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
+        else:
+            self.send_error(404)
+
+    # ------------------------------------------------------------------- POST
+    def do_POST(self):
+        path = urlparse(self.path).path
+        try:
+            body = self._read_json()
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+
+        if path == "/api/models":
+            try:
+                entry = self.state.registry.add(
+                    body.get("provider", ""),
+                    body.get("model", ""),
+                    body.get("api_key", ""),
+                    body.get("base_url", ""),
+                    body.get("label", ""),
+                    body.get("temperature", 0.6),
+                )
+                self._json({"ok": True, "model": self.state.registry.to_public(entry)})
+            except RegistryError as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path.startswith("/api/models/") and path.endswith("/test"):
+            model_id = path[len("/api/models/"):-len("/test")].strip("/")
+            try:
+                result = self.state.registry.test(model_id)
+                self._json(result)
+            except (RegistryError, Exception) as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/new":
+            self._new_match(body)
+        elif path == "/api/move":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                match.submit_human_move(body.get("piece_id", ""), body.get("to", ""))
+                self._json({"ok": True})
+            except IllegalMove as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/say":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                match.say(body.get("text", ""))
+                self._json({"ok": True})
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/stop":
+            self.state.stop_match()
+            self._json({"ok": True})
+        else:
+            self.send_error(404)
+
+    def do_DELETE(self):
+        path = urlparse(self.path).path
+        if path.startswith("/api/models/"):
+            model_id = path[len("/api/models/"):].strip("/")
+            try:
+                self.state.registry.remove(model_id)
+                self._json({"ok": True})
+            except RegistryError as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        else:
+            self.send_error(404)
+
+    # ------------------------------------------------------------- new match
+    def _new_match(self, body):
+        try:
+            red = self.state.spec_for(body.get("red") or {})
+            black = self.state.spec_for(body.get("black") or {})
+        except (ValueError, RegistryError) as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+        human_side = body.get("human_side") or None
+        if human_side not in (None, "", "red", "black"):
+            self._json({"ok": False, "error": "human_side 只能是 red 或 black"}, status=400)
+            return
+        if human_side:
+            spec = red if human_side == "red" else black
+            spec.kind = "human"
+            spec.provider = "human"
+        try:
+            max_plies = int(body.get("max_plies") or 300)
+        except (TypeError, ValueError):
+            max_plies = 300
+        try:
+            seed = int(body.get("seed") or 1)
+        except (TypeError, ValueError):
+            seed = 1
+        self.state.stop_match()
+        try:
+            match = Match(
+                red,
+                black,
+                human_side=human_side or None,
+                max_plies=max(20, min(max_plies, 1000)),
+                seed=seed,
+            )
+            match.start()
+        except Exception as exc:  # noqa: BLE001
+            self._json({"ok": False, "error": "无法开始对局：%s" % exc}, status=400)
+            return
+        self.state.set_match(match)
+        self._json(
+            {
+                "ok": True,
+                "match_id": match.id,
+                "snapshot": match.snapshot(),
+            }
+        )
+
+    # -------------------------------------------------------------------- SSE
+    def _events(self):
+        match = self.state.current()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        channel = None
+        if match is None:
+            self._sse_write({"type": "idle", "snapshot": None})
+            return
+        channel = match.subscribe()
+        try:
+            self._sse_write({"type": "state", "snapshot": match.snapshot()})
+            last_ping = time.time()
+            while True:
+                try:
+                    event = channel.get(timeout=1.0)
+                except queue.Empty:
+                    event = None
+                if event is not None:
+                    self._sse_write(event)
+                if time.time() - last_ping > 12:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    last_ping = time.time()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            if channel is not None:
+                match.unsubscribe(channel)
+
+    def _sse_write(self, payload):
+        body = ("data: " + json.dumps(payload, ensure_ascii=False) + "\n\n").encode("utf-8")
+        self.wfile.write(body)
+        self.wfile.flush()
+
+
+def create_server(host="127.0.0.1", port=8765, registry=None, games_dir=None):
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.daemon_threads = True
+    server.app = AppState(registry=registry, games_dir=games_dir)
+    return server
+
+
+def serve(host="127.0.0.1", port=8765, registry=None, games_dir=None):
+    server = create_server(host, port, registry=registry, games_dir=games_dir)
+    print("象棋对弈 · Xiangqi Duel %s" % __version__)
+    print("打开 http://%s:%d" % (host, port))
+    if host not in ("127.0.0.1", "localhost"):
+        print("注意：正在监听外部地址，请确认只有可信网络可以访问。")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n已退出。")
+    finally:
+        match = server.app.current()
+        if match is not None:
+            match.stop("服务关闭")
+        server.server_close()

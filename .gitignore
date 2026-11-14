@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+.env
+*.log
+
+# 本地模型库与对局日志（模型库含 API Key）
+models.json
+games/
