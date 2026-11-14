@@ -75,11 +75,11 @@ TEMPLATE = """<!DOCTYPE html>
     <div class="players" id="players"></div>
     <div class="result" id="result">对局进行中</div>
     <div class="controls">
-      <button id="first">⏮ 开局</button>
-      <button id="prev">◀ 上一步</button>
+      <button id="first">开局</button>
+      <button id="prev">上一步</button>
       <button id="play">▶ 播放</button>
-      <button id="next">下一步 ▶</button>
-      <button id="last">终局 ⏭</button>
+      <button id="next">下一步</button>
+      <button id="last">终局</button>
     </div>
     <ol class="moves" id="moves"></ol>
     <div class="chat" id="chat"></div>
@@ -209,10 +209,20 @@ TEMPLATE = """<!DOCTYPE html>
     })();
     var result = log.result || {};
     var box = document.getElementById('result');
+    var REASONS = {
+      'checkmate': '将死',
+      'stalemate': '困毙',
+      'perpetual check': '长将判负',
+      'threefold repetition': '三次重复局面判和',
+      'sixty-move rule': '60 回合无吃子判和',
+      'insufficient material': '子力不足判和',
+      'move limit': '达到最大手数'
+    };
+    var reason = REASONS[result.reason] || result.reason || '';
     if (result.winner) {
-      box.textContent = (result.winner === 'red' ? '红方' : '黑方') + '胜 · ' + (result.reason || '');
+      box.textContent = (result.winner === 'red' ? '红方' : '黑方') + '胜 · ' + reason;
     } else if (result.reason) {
-      box.textContent = '和棋 · ' + result.reason;
+      box.textContent = '和棋 · ' + reason;
     } else {
       box.textContent = '对局未结束';
     }
@@ -233,7 +243,6 @@ TEMPLATE = """<!DOCTYPE html>
       index = parseInt(li.getAttribute('data-index'), 10) + 1;
       stop();
       render();
-      showChat(index);
     });
     var chatBox = document.getElementById('chat');
     chatBox.innerHTML = (log.chat || []).map(function (message) {
@@ -254,15 +263,6 @@ TEMPLATE = """<!DOCTYPE html>
     });
     window.addEventListener('resize', fit);
     render();
-  }
-
-  function showChat(position) {
-    var chatBox = document.getElementById('chat');
-    var upto = position;
-    var shown = (log.chat || []).filter(function (message) {
-      return (message.at || 0) <= (log.started_at || 0);
-    });
-    if (shown.length) { chatBox.scrollTop = chatBox.scrollHeight; }
   }
 
   function play() {
