@@ -183,6 +183,7 @@ class Handler(BaseHTTPRequestHandler):
             ".css": "text/css; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
             ".svg": "image/svg+xml",
+            ".png": "image/png",
         }.get(suffix, "application/octet-stream")
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -244,6 +245,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
+        elif path.startswith("/art/"):
+            self._static(path.lstrip("/"))
         else:
             self.send_error(404)
 

@@ -95,12 +95,31 @@
   .side-panel .pane { min-height: 140px; max-height: 46vh; overflow-y: auto; }
   .side-panel .moves { max-height: none; }
   .side-panel .chat { max-height: none; }
+  .side-col {
+    display: flex; flex-direction: column; gap: 12px;
+    height: calc(100vh - 120px); min-height: 0;
+  }
+  .side-col.hidden { display: none; }
   .trace-panel {
     background: linear-gradient(180deg, var(--panel), #1d1813);
     border: 1px solid var(--line); border-radius: 18px; padding: 12px;
-    display: flex; flex-direction: column; gap: 10px; height: min(68vh, 660px);
+    display: flex; flex-direction: column; gap: 10px;
+    flex: 1; min-height: 200px; height: auto;
   }
   .trace-panel.hidden { display: none; }
+  .art-stage {
+    flex: 0 0 auto; height: min(34vh, 370px);
+    display: none; align-items: flex-end; justify-content: center;
+    pointer-events: none;
+  }
+  .art-stage.on { display: flex; }
+  .art-stage img {
+    max-height: 100%; max-width: 100%; width: auto; object-fit: contain;
+    filter: drop-shadow(0 14px 32px rgba(0, 0, 0, .55));
+  }
+  .art-stage.flip img { transform: scaleX(-1); }
+  .layout.human .side-col { display: none; }
+  .layout.replay .side-col { display: none; }
   .panel-head .player { width: 100%; }
   .trace-panel .trace { flex: 1; overflow-y: auto; max-height: none; }
   .players-inline { display: flex; gap: 10px; width: min(66vh, 100%); }
@@ -203,6 +222,7 @@
   }
   .players { display: grid; gap: 10px; }
   .player {
+    position: relative; overflow: hidden;
     display: flex; align-items: center; gap: 12px; padding: 10px 12px;
     border-radius: 12px; background: var(--panel-2); border: 1px solid transparent;
   }
@@ -466,6 +486,7 @@
     gap: 22px; width: min(800px, 100%);
   }
   .side-card {
+    position: relative; overflow: hidden;
     display: flex; align-items: center; gap: 16px; padding: 22px; border-radius: 20px;
     border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
     cursor: pointer; text-align: left; transition: border-color .18s, transform .18s;
@@ -486,7 +507,19 @@
   .side-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .side-info strong { font-size: 16px; }
   .side-info span { color: var(--muted); font-size: 13px; }
-  .side-edit { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .side-edit { margin-left: auto; color: var(--accent); font-size: 12px; position: relative; z-index: 2; }
+  .side-card.has-art { min-height: 170px; padding-right: 132px; }
+  .side-art {
+    position: absolute; right: 6px; bottom: 0; height: 158px;
+    pointer-events: none; z-index: 1;
+  }
+  .side-art.hidden { display: none; }
+  .side-art img {
+    height: 100%; width: auto; display: block; opacity: .96;
+    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, .38));
+  }
+  .side-art.flip img { transform: scaleX(-1); }
+
   .lobby-actions { display: flex; gap: 14px; align-items: center; }
   .picker-box { width: min(560px, 100%); }
   .picker-list {
@@ -512,7 +545,8 @@
   .tool-toggle input { margin-top: 3px; accent-color: #d9a441; }
   .tool-toggle.locked { opacity: .75; }
   #setup .side-config, #setup .setup-actions { display: none; }
-  #setup .setup-section:nth-of-type(3) { display: none; }
+  #setup .setup-section.legacy { display: none; }
+
   @media (max-width: 900px) {
     .mode-cards, .lobby-cards { grid-template-columns: 1fr; }
   }
@@ -548,9 +582,12 @@
 </header>
 
 <main class="layout" id="layout">
-  <aside class="trace-panel hidden" id="panel-red">
-    <div class="panel-head" id="panel-head-red"></div>
-    <div class="trace" id="trace-list-red"></div>
+  <aside class="side-col hidden" id="col-red">
+    <aside class="trace-panel" id="panel-red">
+      <div class="panel-head" id="panel-head-red"></div>
+      <div class="trace" id="trace-list-red"></div>
+    </aside>
+    <div class="art-stage" id="art-stage-red"></div>
   </aside>
 
   <section class="board-panel">
@@ -599,9 +636,12 @@
     </aside>
 
 
-  <aside class="trace-panel hidden" id="panel-black">
-    <div class="panel-head" id="panel-head-black"></div>
-    <div class="trace" id="trace-list-black"></div>
+  <aside class="side-col hidden" id="col-black">
+    <aside class="trace-panel" id="panel-black">
+      <div class="panel-head" id="panel-head-black"></div>
+      <div class="trace" id="trace-list-black"></div>
+    </aside>
+    <div class="art-stage" id="art-stage-black"></div>
   </aside>
 </main>
 
@@ -659,11 +699,13 @@
     <button class="side-card red" id="side-red">
       <div class="side-avatar">帥</div>
       <div class="side-info"><strong>红方</strong><span id="side-red-label">空位 · 点击选择</span></div>
+      <div class="side-art hidden" id="side-red-art"></div>
       <span class="side-edit">选择</span>
     </button>
     <button class="side-card black" id="side-black">
       <div class="side-avatar">將</div>
       <div class="side-info"><strong>黑方</strong><span id="side-black-label">空位 · 点击选择</span></div>
+      <div class="side-art hidden" id="side-black-art"></div>
       <span class="side-edit">选择</span>
     </button>
   </div>
@@ -715,6 +757,14 @@
     </section>
 
     <section class="setup-section">
+      <div class="section-head"><h3>外观</h3></div>
+      <label class="tool-toggle" style="max-width:340px;">
+        <input type="checkbox" id="art-toggle">
+        <span><strong>模型立绘</strong><br><span class="hint">选人时显示对应立绘；思考、工具调用时切换为思考状态；红黑两侧镜像翻转</span></span>
+      </label>
+    </section>
+
+    <section class="setup-section legacy">
       <div class="section-head">
         <h3>② 对局设置</h3>
         <span class="hint">选手与模型解耦：每个座位从模型库里挑一个</span>
@@ -766,7 +816,8 @@
     openTraces: {},
     movesSignature: "",
     lastTurn: null,
-    settingsFromHome: false
+    settingsFromHome: false,
+    artEnabled: true
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -856,6 +907,7 @@
     renderBoard(snap);
     renderStatus(snap);
     renderPlayers(snap);
+    renderArtStages(snap);
     renderMoves(snap);
     renderChat(snap);
     renderTrace(snap);
@@ -874,6 +926,8 @@
     $('layout').classList.toggle('human', !spectate);
     $('panel-red').classList.toggle('hidden', !spectate);
     $('panel-black').classList.toggle('hidden', !spectate);
+    $('col-red').classList.toggle('hidden', !spectate);
+    $('col-black').classList.toggle('hidden', !spectate);
     $('btn-drawer').classList.toggle('hidden', !spectate);
     $('chat-form').classList.toggle('hidden', snap.mode === 'aivai');
     $('chat-hint').textContent = snap.mode === 'aivai' ? '观战模式 · 对话只读' : '';
@@ -981,6 +1035,33 @@
     }
   }
 
+  var ART_KEYS = [
+    { key: "ChatGPT", match: ["chatgpt", "openai", "gpt-4", "gpt4"] },
+    { key: "DeepSeek", match: ["deepseek"] },
+    { key: "Doubao", match: ["doubao", "豆包"] },
+    { key: "Gemini", match: ["gemini"] },
+    { key: "Grok", match: ["grok"] },
+    { key: "MiniMax", match: ["minimax", "mini-max"] },
+    { key: "Qwen", match: ["qwen", "通义"] }
+  ];
+
+  function artInfo(player) {
+    if (!player || (player.kind !== "model" && player.kind !== "llm")) { return null; }
+    var hay = ((player.provider || "") + " " + (player.model || "") + " " + (player.label || "")).toLowerCase();
+    for (var i = 0; i < ART_KEYS.length; i += 1) {
+      var entry = ART_KEYS[i];
+      for (var j = 0; j < entry.match.length; j += 1) {
+        if (hay.indexOf(entry.match[j]) !== -1) {
+          return {
+            normal: "/art/" + entry.key + "-normal.png",
+            thinking: "/art/" + entry.key + "-thinking.png"
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   function playerCard(side, snap) {
     var info = (snap.players || {})[side] || {};
     var label = info.label || (side === 'red' ? '红方' : '黑方');
@@ -1004,6 +1085,26 @@
       '<div class="meta"><strong>' + esc(title) + '</strong><span>' + esc(kind) + '</span></div>' +
       '<div class="usage">' + (tokens ? tokens + ' tokens' : '') + '</div>' +
       '</div>';
+  }
+
+  function renderArtStages(snap) {
+    ['red', 'black'].forEach(function (side) {
+      var stage = $(side === 'red' ? 'art-stage-red' : 'art-stage-black');
+      if (!stage) { return; }
+      var info = snap && snap.players ? snap.players[side] : null;
+      var art = state.artEnabled ? artInfo(info) : null;
+      var live = snap && snap.mode === 'aivai' && !(state.replay && state.replay.active);
+      if (!art || !live) {
+        stage.classList.remove('on');
+        stage.innerHTML = '';
+        return;
+      }
+      var busy = (info.kind === 'model' || info.kind === 'llm') &&
+        snap.status === 'playing' && snap.turn === side;
+      stage.innerHTML = '<img src="' + (busy ? art.thinking : art.normal) + '" alt="">';
+      stage.classList.add('on');
+      stage.classList.toggle('flip', side === 'black');
+    });
   }
 
   function renderPlayers(snap) {
@@ -1954,6 +2055,7 @@
     $('btn-drawer').classList.add('hidden');
     $('tab-trace').classList.remove('hidden');
     switchTab('trace');
+    renderArtStages(state.snapshot);
     renderReplay();
   }
 
@@ -1972,6 +2074,7 @@
       $('panel-black').classList.remove('hidden');
     }
     refreshState();
+    renderArtStages(state.snapshot);
   }
 
   function replayStep(delta) {
@@ -2196,10 +2299,29 @@
     return entry.label || entry.id;
   }
 
+  function setLobbyArt(side, entry) {
+    var host = $(side === 'red' ? 'side-red-art' : 'side-black-art');
+    var card = $(side === 'red' ? 'side-red' : 'side-black');
+    if (!host || !card) { return; }
+    var art = state.artEnabled ? artInfo(entry) : null;
+    if (!art) {
+      host.innerHTML = '';
+      host.classList.add('hidden');
+      card.classList.remove('has-art');
+      return;
+    }
+    host.innerHTML = '<img src="' + art.normal + '" alt="">';
+    host.classList.remove('hidden');
+    host.classList.toggle('flip', side === 'black');
+    card.classList.add('has-art');
+  }
+
   function updateLobby() {
     var lobby = state.lobby;
     $('side-red-label').textContent = entryLabel(lobby.red);
     $('side-black-label').textContent = entryLabel(lobby.black);
+    setLobbyArt('red', lobby.red);
+    setLobbyArt('black', lobby.black);
     var humans = [lobby.red, lobby.black].filter(function (entry) {
       return entry && entry.kind === 'human';
     }).length;
@@ -2229,6 +2351,8 @@
         kind: 'model',
         id: model.id,
         label: model.label,
+        provider: model.provider,
+        model: model.model,
         sub: model.provider + ' · ' + model.model
       });
     });
@@ -2240,7 +2364,8 @@
     pickerEntries().forEach(function (entry) {
       var value = entry.kind === 'model' ? 'model:' + entry.id : entry.kind;
       html += '<button class="picker-item" data-kind="' + entry.kind + '" data-value="' + value +
-        '" data-id="' + (entry.id || '') + '" data-label="' + esc(entry.label) + '">' +
+        '" data-id="' + (entry.id || '') + '" data-label="' + esc(entry.label) +
+        '" data-provider="' + esc(entry.provider || '') + '" data-model="' + esc(entry.model || '') + '">' +
         '<span class="name">' + esc(entry.label) + '</span>' +
         '<span class="sub">' + esc(entry.sub || '') + '</span></button>';
     });
@@ -2271,7 +2396,9 @@
         state.lobby[side] = {
           kind: 'model',
           id: kind.slice(6),
-          label: label || ''
+          label: label || '',
+          provider: label ? (state.models.filter(function (m) { return m.id === kind.slice(6); })[0] || {}).provider : '',
+          model: (state.models.filter(function (m) { return m.id === kind.slice(6); })[0] || {}).model
         };
       }
     }
@@ -2427,6 +2554,12 @@
     });
     $('lobby-start').addEventListener('click', startFromLobby);
     $('tool-toggles').addEventListener('change', collectTools);
+    $('art-toggle').addEventListener('change', function () {
+      state.artEnabled = $('art-toggle').checked;
+      try { localStorage.setItem('xiangqi.art', state.artEnabled ? '1' : '0'); } catch (err) {}
+      if (state.snapshot) { renderPlayers(state.snapshot); }
+      updateLobby();
+    });
     $('setup-close').addEventListener('click', closeSetup);
     $('setup').addEventListener('click', function (event) {
       if (event.target === $('setup')) { closeSetup(); }
@@ -2533,6 +2666,7 @@
     blackSelect = $('black-select');
     drawGrid();
     bindEvents();
+    $('art-toggle').checked = state.artEnabled;
     fitBoard();
     if (window.ResizeObserver) {
       new ResizeObserver(function () { fitBoard(); }).observe($('grid'));
@@ -2544,6 +2678,7 @@
     try {
       var savedTools = JSON.parse(localStorage.getItem('xiangqi.tools') || 'null');
       if (Array.isArray(savedTools)) { state.tools = savedTools; }
+      state.artEnabled = localStorage.getItem('xiangqi.art') !== '0';
     } catch (err) {}
     state.staticMode = window.location.search.indexOf('static=1') !== -1;
     await refreshState();
@@ -2562,6 +2697,12 @@
       }
     } else if (screenParam === 'settings') {
       openSettings();
+    }
+    if (screenParams.get('artdemo') === '1') {
+      openLobby('aivai');
+      state.lobby.red = { kind: 'model', label: 'DeepSeek', provider: 'deepseek', model: 'deepseek-flash' };
+      state.lobby.black = { kind: 'model', label: 'Qwen', provider: 'qwen', model: 'qwen-max' };
+      updateLobby();
     }
     var params = new URLSearchParams(window.location.search);
     if (params.get('setup') === '1') { openSetup(); }
