@@ -140,6 +140,21 @@
     filter: drop-shadow(0 14px 32px rgba(0, 0, 0, .55));
   }
   .art-stage.flip img { transform: scaleX(-1); }
+  .human-stage {
+    transition: width .18s ease, height .18s ease, top .18s ease;
+  }
+  .art-stage.fx img { animation: artPop .34s cubic-bezier(.2, .9, .3, 1); }
+  .art-stage.flip.fx img { animation: artPopFlip .34s cubic-bezier(.2, .9, .3, 1); }
+  @keyframes artPop {
+    0% { transform: scale(1); }
+    35% { transform: scale(1.07); }
+    100% { transform: scale(1); }
+  }
+  @keyframes artPopFlip {
+    0% { transform: scaleX(-1) scale(1); }
+    35% { transform: scaleX(-1) scale(1.07); }
+    100% { transform: scaleX(-1) scale(1); }
+  }
   .layout.human .side-col { display: none; }
   .layout.replay .side-col { display: none; }
   .panel-head .player { width: 100%; }
@@ -1167,6 +1182,8 @@
     clearTimeout(artInfoTimers[key]);
   }
 
+  var humanArtBox = '';
+
   function layoutHumanArt() {
     var stage = $('art-stage-human');
     var info = $('art-info-human');
@@ -1174,6 +1191,9 @@
     if (!stage || !info || !panel) { return; }
     if (!stage.classList.contains('on')) { return; }
     var rect = panel.getBoundingClientRect();
+    var stamp = [Math.round(rect.bottom), Math.round(rect.right), Math.round(rect.width), window.innerHeight].join('|');
+    if (stamp === humanArtBox) { return; }
+    humanArtBox = stamp;
     var right = Math.max(16, window.innerWidth - rect.right);
     var width = Math.min(Math.max(rect.width, 260), 380);
     var top = rect.bottom + 16;
@@ -1909,6 +1929,10 @@
       } else if (kind === 'draw') {
         tone(440, 0.3, 'sine', 0.1);
         tone(440, 0.3, 'sine', 0.08, 0.24);
+      } else if (kind === 'art') {
+        tone(880, 0.07, 'sine', 0.05);
+        tone(1320, 0.11, 'triangle', 0.04, 0.045);
+        noise(0.04, 0.025);
       }
     } catch (err) { /* audio is optional */ }
   }
@@ -2690,7 +2714,16 @@
     $('tool-toggles').addEventListener('change', collectTools);
     ['red', 'black', 'human'].forEach(function (key) {
       var stage = $('art-stage-' + key);
-      if (stage) { stage.addEventListener('click', function () { showArtInfo(key); }); }
+      if (stage) {
+        stage.addEventListener('click', function () {
+          showArtInfo(key);
+          stage.classList.remove('fx');
+          void stage.offsetWidth;
+          stage.classList.add('fx');
+          setTimeout(function () { stage.classList.remove('fx'); }, 420);
+          sound('art');
+        });
+      }
     });
     $('art-toggle').addEventListener('change', function () {
       state.artEnabled = $('art-toggle').checked;
@@ -2794,6 +2827,10 @@
     });
 
     window.addEventListener('resize', function () { fitBoard(); layoutHumanArt(); });
+    if (window.ResizeObserver) {
+      var side = $('side-panel');
+      if (side) { new ResizeObserver(function () { layoutHumanArt(); }).observe(side); }
+    }
   }
 
   async function init() {
