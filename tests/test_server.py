@@ -156,6 +156,33 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(data["ok"], True)
 
+    def test_06_rematch(self):
+        status, data = self.call(
+            "/api/new",
+            "POST",
+            {
+                "red": {"kind": "engine", "depth": 1},
+                "black": {"kind": "engine", "depth": 1},
+                "max_plies": 20,
+            },
+        )
+        self.assertEqual(status, 200)
+        old_id = data["match_id"]
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            status, state = self.call("/api/state")
+            if state["snapshot"] and state["snapshot"]["status"] == "finished":
+                break
+            time.sleep(0.2)
+        status, data = self.call("/api/rematch", "POST", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertNotEqual(data["match_id"], old_id)
+        self.assertIsNotNone(data["snapshot"])
+        self.assertEqual(data["snapshot"]["match_id"], data["match_id"])
+        status, state = self.call("/api/state")
+        self.assertEqual(state["snapshot"]["match_id"], data["match_id"])
+
     def test_05_bad_match_request(self):
         status, data = self.call(
             "/api/new",

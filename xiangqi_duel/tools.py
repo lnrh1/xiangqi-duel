@@ -255,6 +255,7 @@ class ToolBox:
         self.pending = None
         self.outbox = []
         self.messages_sent = 0
+        self.resign_reason = ""
 
     # ------------------------------------------------------------- dispatch
     def call(self, name, arguments=None):
@@ -550,5 +551,7 @@ class ToolBox:
     def _t_resign(self, reason=""):
         if self.game.status != "playing":
             return {"ok": False, "error": "对局已经结束"}
-        result = self.game.resign(self.side, reason or "认输")
-        return {"ok": True, "status": self.game.status, "result": result}
+        reason = str(reason or "").strip() or "认输"
+        self.resign_reason = reason[:120]
+        result = self.game.resign(self.side, reason)
+        return {"ok": True, "status": self.game.status, "result": result, "reason": reason}

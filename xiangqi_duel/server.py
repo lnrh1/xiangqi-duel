@@ -320,6 +320,36 @@ class Handler(BaseHTTPRequestHandler):
                 return
             match.resign(side, "人类认输")
             self._json({"ok": True})
+        elif path == "/api/rematch":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                players = dict(match.players)
+                match.stop("开始新一局")
+                for side, player in players.items():
+                    reset = getattr(player, "reset_for_new_game", None)
+                    if reset is not None:
+                        reset(side)
+                new_match = Match(
+                    match.red_spec,
+                    match.black_spec,
+                    human_side=match.human_side,
+                    max_plies=match.max_plies,
+                    players=players,
+                )
+                new_match.start()
+                self.state.set_match(new_match)
+                self._json(
+                    {
+                        "ok": True,
+                        "match_id": new_match.id,
+                        "snapshot": new_match.snapshot(),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": "无法开始新一局：%s" % exc}, status=400)
         elif path == "/api/stop":
             self.state.stop_match()
             self._json({"ok": True})

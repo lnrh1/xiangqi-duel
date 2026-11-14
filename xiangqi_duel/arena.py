@@ -125,6 +125,7 @@ class Match:
         fen=None,
         seed=1,
         game_id=None,
+        players=None,
     ):
         self.id = game_id or uuid.uuid4().hex[:10]
         self.red_spec = red_spec
@@ -151,9 +152,12 @@ class Match:
         for color in (RED, BLACK):
             if color == human_side:
                 continue
-            self.players[color] = specs[color].make_player(
-                color, self._agent_event, seed=seed + (1 if color == BLACK else 0)
-            )
+            if players and color in players:
+                self.players[color] = players[color]
+            else:
+                self.players[color] = specs[color].make_player(
+                    color, self._agent_event, seed=seed + (1 if color == BLACK else 0)
+                )
 
     # ------------------------------------------------------------- event bus
     def subscribe(self):
@@ -283,7 +287,10 @@ class Match:
                         if self.game.status != "playing":
                             break
                     if decision.resign:
-                        self.game.resign(side, decision.comment or "认输")
+                        self.game.resign(
+                            side,
+                            decision.resign_reason or decision.comment or "认输",
+                        )
                         break
                     if decision.error:
                         self._error(decision.error)
@@ -314,6 +321,38 @@ class Match:
                 result = self.game.result
             self._broadcast({"type": "state", "snapshot": snapshot})
             self._broadcast({"type": "end", "result": result, "snapshot": snapshot})
+            if result and not self.stop_event.is_set():
+                threading.Thread(
+                    target=self._farewell, name="farewell-%s" % self.id, daemon=True
+                ).start()
+
+    def _farewell(self):
+        """Let both AIs say one closing line after the game."""
+        for side, player in list(self.players.items()):
+            say = getattr(player, "farewell", None)
+            if say is None:
+                continue
+            try:
+                with self.lock:
+                    view = self.game.clone()
+                text = (say(view) or "").strip()
+            except Exception:  # noqa: BLE001 - optional step
+                text = ""
+            if not text:
+                continue
+            with self.lock:
+                self.chat.append(
+                    {
+                        "side": side,
+                        "text": text,
+                        "at": time.time(),
+                        "ply": len(self.game.history) + 1,
+                    }
+                )
+            opponent = other(side)
+            if opponent in self.players:
+                self.players[opponent].inbox.put({"from": "opponent", "text": text})
+            self._broadcast({"type": "state", "snapshot": self.snapshot()})
 
     def _wait_human(self):
         while not self.stop_event.is_set():
@@ -335,7 +374,14 @@ class Match:
         opponent = other(side)
         for text in messages:
             with self.lock:
-                self.chat.append({"side": side, "text": text, "at": time.time()})
+                self.chat.append(
+                    {
+                        "side": side,
+                        "text": text,
+                        "at": time.time(),
+                        "ply": len(self.game.history) + 1,
+                    }
+                )
             if opponent in self.players:
                 self.players[opponent].inbox.put({"from": "opponent", "text": text})
         self._broadcast({"type": "state", "snapshot": self.snapshot()})
@@ -371,7 +417,14 @@ class Match:
         if self.human_side is None:
             raise ValueError("观战模式不能发言")
         with self.lock:
-            self.chat.append({"side": "user", "text": text, "at": time.time()})
+            self.chat.append(
+                {
+                    "side": "user",
+                    "text": text,
+                    "at": time.time(),
+                    "ply": len(self.game.history) + 1,
+                }
+            )
             for player in self.players.values():
                 player.inbox.put({"from": "human", "text": text})
         self._broadcast({"type": "state", "snapshot": self.snapshot()})

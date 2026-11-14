@@ -150,3 +150,19 @@ class LLMPlayerTest(unittest.TestCase):
         self.assertIn("黑方", black_text)
         self.assertEqual(len(red.blocks), 1)
         self.assertEqual(len(black.blocks), 1)
+
+class ResignTest(unittest.TestCase):
+    def test_resign_reason_kept(self):
+        client = FakeClient(
+            [
+                ChatResult(
+                    text="局面太差，投了",
+                    tool_calls=[ToolCall("c1", "resign", {"reason": "车马炮全丢，认输"})],
+                )
+            ]
+        )
+        player = LLMPlayer("red", client, config())
+        decision = player.choose(Game())
+        self.assertTrue(decision.resign)
+        self.assertIn("车马炮全丢", decision.resign_reason)
+

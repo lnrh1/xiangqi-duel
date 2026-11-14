@@ -62,6 +62,7 @@ class AgentDecision:
     steps: int = 0
     error: str = ""
     fallback: bool = False
+    resign_reason: str = ""
 
 
 def side_zh(color):
@@ -195,7 +196,10 @@ class LLMPlayer:
                     )
                 if call.name == "resign" and outcome.get("ok"):
                     return self._decision(
-                        resign=True, comment=last_text or "认输", steps=step + 1
+                        resign=True,
+                        resign_reason=self.toolbox.resign_reason or "认输",
+                        comment=last_text or "认输",
+                        steps=step + 1,
                     )
             messages = self._messages()
 
@@ -301,6 +305,47 @@ class LLMPlayer:
         )
 
 
+    def farewell(self, game):
+        """One short closing line after the game, sent through chat."""
+        if game.status != "finished":
+            return ""
+        result = game.result or {}
+        winner = result.get("winner")
+        if winner == self.side:
+            outcome = "你赢了"
+        elif winner:
+            outcome = "你输了"
+        else:
+            outcome = "和棋"
+        prompt = (
+            "对局结束：%s（%s）。请用一句中文（不超过 40 字）向对手说句话，"
+            "不要调用工具，直接输出这句话。"
+            % (outcome, result.get("reason", ""))
+        )
+        try:
+            reply = self.client.chat(
+                "你是一名中国象棋棋手。",
+                [{"role": "user", "content": prompt}],
+            )
+        except Exception:  # noqa: BLE001 - farewell is optional
+            return ""
+        return (reply.text or "").strip()[:120]
+
+    def reset_for_new_game(self, side=None):
+        """Keep the conversation memory, start a fresh game."""
+        self.usage_total = {"input": 0, "output": 0, "total": 0}
+        self.turns = 0
+        self.toolbox = None
+        while True:
+            try:
+                self.inbox.get_nowait()
+            except queue.Empty:
+                break
+        note = "上一局已经结束，现在开始新的一盘，你仍然执%s方。" % side_zh(self.side)
+        self.blocks.append([{"role": "user", "content": note}])
+        while len(self.blocks) > self.max_blocks:
+            self.blocks.pop(0)
+
 class EnginePlayer:
     """本地 alpha-beta 引擎棋手，无需 API。"""
 
@@ -315,6 +360,16 @@ class EnginePlayer:
         self.label = label or "本地引擎（深度 %d）" % depth
         self.inbox = queue.Queue()
         self.usage_total = {"input": 0, "output": 0, "total": 0}
+
+    def reset_for_new_game(self, side=None):
+        while True:
+            try:
+                self.inbox.get_nowait()
+            except queue.Empty:
+                break
+
+    def farewell(self, game):
+        return ""
 
     def choose(self, game):
         self.emit(

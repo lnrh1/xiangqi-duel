@@ -190,40 +190,41 @@ class Game:
         """End the game without a winner (timeout, stopped by the user)."""
         if self.status != "playing":
             return self.result
-        self._finish(None, reason)
+        self._finish(None, reason, "aborted")
         return self.result
 
     def resign(self, side, reason="resignation"):
         if self.status != "playing":
             return self.result
-        self._finish(other(side), reason)
+        self._finish(other(side), reason, "resign")
         return self.result
 
     # ------------------------------------------------------------------- rules
-    def _finish(self, winner, reason):
+    def _finish(self, winner, reason, code=None):
         self.status = "finished"
         self.result = {
             "winner": winner,
             "winner_label": COLOR_ZH.get(winner) if winner else None,
             "reason": reason,
+            "code": code or reason,
         }
 
     def _check_state(self):
         if self.status != "playing":
             return
         if not self.all_legal_moves():
-            self._finish(
-                other(self.turn),
-                "checkmate" if self.in_check() else "stalemate",
-            )
+            if self.in_check():
+                self._finish(other(self.turn), "checkmate", "checkmate")
+            else:
+                self._finish(other(self.turn), "stalemate", "stalemate")
             return
         if self.halfmove_clock >= DRAW_HALFMOVES:
-            self._finish(None, "sixty-move rule")
+            self._finish(None, "sixty-move rule", "sixty-move")
             return
         red_attack = any(p.type in ATTACKERS for p in self.board.side_pieces(RED))
         black_attack = any(p.type in ATTACKERS for p in self.board.side_pieces(BLACK))
         if not red_attack and not black_attack:
-            self._finish(None, "insufficient material")
+            self._finish(None, "insufficient material", "insufficient")
             return
         key = self.board.key(self.turn)
         if self.positions[key] >= 3:
@@ -240,8 +241,8 @@ class Game:
         for side in (RED, BLACK):
             side_moves = [m for m in cycle if m.side == side]
             if side_moves and all(m.gave_check for m in side_moves):
-                return other(side), "perpetual check"
-        return None, "threefold repetition"
+                return other(side), "perpetual check", "perpetual"
+        return None, "threefold repetition", "threefold"
 
     # ---------------------------------------------------------------- copying
     def clone(self):

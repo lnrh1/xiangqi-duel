@@ -269,6 +269,15 @@
     text-shadow: 0 0 24px rgba(255, 140, 50, .95), 0 0 90px rgba(200, 40, 16, .85),
                  0 0 160px rgba(160, 20, 8, .55);
   }
+  .fx-banner.lose {
+    color: #d7e6f5;
+    text-shadow: 0 0 24px rgba(110, 160, 220, .9), 0 0 90px rgba(50, 80, 120, .8),
+                 0 0 160px rgba(30, 50, 80, .6);
+  }
+  .fx-banner.draw {
+    color: #efe0c0;
+    text-shadow: 0 0 22px rgba(210, 180, 120, .9), 0 0 80px rgba(150, 120, 70, .75);
+  }
   .fx-banner.on { animation: fxBanner 1.7s cubic-bezier(.16, .84, .24, 1) forwards; }
   @keyframes fxBanner {
     0% { opacity: 0; transform: translate(-50%, -50%) scale(.35) rotate(-8deg); }
@@ -344,6 +353,7 @@
   <div class="top-actions">
     <button id="btn-new" class="btn primary">新对局</button>
     <button id="btn-resign" class="btn hidden">认输</button>
+    <button id="btn-rematch" class="btn hidden">再来一局</button>
     <button id="btn-replay" class="btn">复盘</button>
     <button id="btn-sound" class="btn">音效 关</button>
     <button id="btn-stop" class="btn">停止</button>
@@ -564,6 +574,13 @@
     var resignBtn = $('btn-resign');
     if (snap.mode === 'human' && snap.status === 'playing') { resignBtn.classList.remove('hidden'); }
     else { resignBtn.classList.add('hidden'); }
+    var finished = snap.status === 'finished';
+    $('btn-replay').classList.toggle('hidden', !finished);
+    $('btn-rematch').classList.toggle('hidden', !finished);
+    var subtitle = $('subtitle');
+    subtitle.textContent = snap.mode === 'human'
+      ? '人机对弈 · 你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
+      : '双 AI 对弈，实时观战';
     var chatInput = $('chat-input');
     var hint = $('chat-hint');
     if (snap.mode === 'human') {
@@ -653,15 +670,7 @@
     } else {
       var result = snap.result || {};
       var winner = result.winner ? (result.winner === 'red' ? '红方' : '黑方') : '和棋';
-      var reasonZh = {
-        'checkmate': '将死',
-        'stalemate': '困毙',
-        'perpetual check': '长将判负',
-        'threefold repetition': '三次重复局面判和',
-        'sixty-move rule': '60 回合无吃子判和',
-        'insufficient material': '子力不足判和',
-        'move limit': '达到最大手数'
-      }[result.reason] || result.reason;
+      var reasonZh = reasonLabel(result.code || result.reason, result.reason);
       text.textContent = '对局结束：' + (winner === '和棋' ? '和棋' : winner + '胜');
       check.textContent = '· ' + (reasonZh || '');
       material.textContent = '共 ' + snap.ply + ' 手';
@@ -1144,9 +1153,12 @@
     }
   }
 
-  function bannerFx(text, subtitle, mate) {
+  function bannerFx(text, subtitle, mate, tone) {
     var node = $('fx-banner');
-    node.className = 'fx-banner ' + (mate ? 'mate' : 'check');
+    var cls = mate ? 'mate' : 'check';
+    if (tone === 'lose') { cls += ' lose'; }
+    if (tone === 'draw') { cls += ' draw'; }
+    node.className = 'fx-banner ' + cls;
     node.innerHTML = esc(text) + (subtitle ? '<span class="sub">' + esc(subtitle) + '</span>' : '');
     void node.offsetWidth;
     node.classList.add('on');
@@ -1294,20 +1306,110 @@
     setTimeout(function () { fxLayer().classList.remove('on'); }, 4200);
   }
 
+  function reasonLabel(code, reason) {
+    var map = {
+      checkmate: '将死',
+      stalemate: '困毙',
+      resign: '认输',
+      'threefold': '三次重复局面判和',
+      'perpetual': '长将判负',
+      'sixty-move': '60 回合无吃子判和',
+      insufficient: '子力不足判和',
+      aborted: '对局中止'
+    };
+    if (code === 'resign') { return reason || '认输'; }
+    return map[code] || reason || '';
+  }
+
+  function playEndFx(snap) {
+    var result = snap.result || {};
+    var code = result.code || result.reason || '';
+    var winner = result.winner;
+    var human = snap.human_side;
+    var reason = reasonLabel(code, result.reason || '');
+    var title = '对局结束';
+    var subtitle = reason;
+    var tone = 'mate';
+
+    if (human) {
+      if (code === 'resign' && winner === human) {
+        title = '胜 利';
+        subtitle = '对方认输 · ' + reason;
+        tone = 'win';
+      } else if (code === 'resign' && winner !== human) {
+        title = '认 输';
+        subtitle = '你认输了';
+        tone = 'lose';
+      } else if (!winner) {
+        title = '和 棋';
+        subtitle = reason || '握手言和';
+        tone = 'draw';
+      } else if (winner === human) {
+        title = '胜 利';
+        subtitle = reason || '你赢了';
+        tone = 'win';
+      } else {
+        title = '失 败';
+        subtitle = reason || '再接再厉';
+        tone = 'lose';
+      }
+    } else if (code === 'checkmate') {
+      title = '绝 杀';
+      subtitle = (winner === 'red' ? '红方' : '黑方') + '胜';
+    } else if (code === 'stalemate') {
+      title = '困 毙';
+      subtitle = (winner === 'red' ? '红方' : '黑方') + '胜';
+    } else if (code === 'resign') {
+      title = '认 输';
+      subtitle = (winner === 'red' ? '黑方' : '红方') + '认输 · ' + reason;
+      tone = 'draw';
+    } else if (!winner) {
+      title = '和 棋';
+      subtitle = reason || '握手言和';
+      tone = 'draw';
+    } else {
+      title = '胜 利';
+      subtitle = (winner === 'red' ? '红方' : '黑方') + '胜 · ' + reason;
+      tone = 'win';
+    }
+
+    var colors = tone === 'lose'
+      ? ['#9fb4c9', '#6d8aa6', '#3f5468']
+      : (tone === 'draw'
+        ? ['#e7d3a8', '#c9a86a', '#8a6a3a']
+        : ['#ffd27a', '#f2a33c', '#c1421f', '#f6e2b8']);
+    var center = { x: window.innerWidth / 2, y: window.innerHeight * 0.44 };
+
+    showFx();
+    $('fx-dim').classList.add('on');
+    flashFx();
+    ringsAt(center.x, center.y, 4);
+    spawnBurst(center.x, center.y, {
+      count: 110,
+      colors: colors,
+      speed: 7.5,
+      lift: 2.6,
+      gravity: 0.08
+    });
+    bannerFx(title, subtitle, true, tone);
+    shakeBoard();
+    sound(tone === 'lose' ? 'check' : 'mate');
+    if (winner) { glowPiece(winner); }
+    setTimeout(function () { $('fx-dim').classList.remove('on'); }, 3400);
+    setTimeout(function () { fxLayer().classList.remove('on'); }, 4400);
+  }
+
   function detectFx(snap) {
     if (!state.fxReady) {
       state.fxReady = true;
       state.lastPly = snap.ply;
       return;
     }
-    if (snap.status === 'finished' && snap.result) {
-      var reason = snap.result.reason;
-      if ((reason === 'checkmate' || reason === 'stalemate') && !state.mateShown) {
-        state.mateShown = true;
-        state.lastPly = snap.ply;
-        playMateFx(snap);
-        return;
-      }
+    if (snap.status === 'finished' && snap.result && !state.mateShown) {
+      state.mateShown = true;
+      state.lastPly = snap.ply;
+      playEndFx(snap);
+      return;
     }
     if (snap.ply > state.lastPly) {
       state.lastPly = snap.ply;
@@ -1365,14 +1467,32 @@
   function buildReplayTimeline(log) {
     var timeline = [{ type: 'start', fen: log.start_fen }];
     var byPly = {};
+    var chatsByPly = {};
     (log.trace || []).forEach(function (entry) {
       if (entry.kind === 'llm_step') { return; }
       var ply = entry.ply || 0;
       (byPly[ply] = byPly[ply] || []).push(entry);
     });
+    (log.chat || []).forEach(function (message) {
+      var ply = message.ply || 0;
+      (chatsByPly[ply] = chatsByPly[ply] || []).push(message);
+    });
     (log.moves || []).forEach(function (move) {
-      (byPly[move.ply] || []).forEach(function (entry) { timeline.push({ type: 'trace', entry: entry }); });
+      (chatsByPly[move.ply] || []).forEach(function (message) {
+        timeline.push({ type: 'chat', message: message });
+      });
+      (byPly[move.ply] || []).forEach(function (entry) {
+        timeline.push({ type: 'trace', entry: entry });
+      });
       timeline.push({ type: 'move', move: move });
+    });
+    var moveCount = (log.moves || []).length;
+    Object.keys(chatsByPly).map(Number).sort(function (a, b) { return a - b; }).forEach(function (ply) {
+      if (ply > moveCount) {
+        chatsByPly[ply].forEach(function (message) {
+          timeline.push({ type: 'chat', message: message });
+        });
+      }
     });
     return timeline;
   }
@@ -1425,6 +1545,7 @@
     var lastMove = null;
     var ply = 0;
     var shown = [];
+    var shownChats = [];
     for (var i = 0; i <= rp.index && i < rp.timeline.length; i += 1) {
       var item = rp.timeline[i];
       if (item.type === 'move') {
@@ -1433,11 +1554,17 @@
         ply = item.move.ply;
       } else if (item.type === 'trace') {
         shown.push(item.entry);
+      } else if (item.type === 'chat') {
+        shownChats.push(item.message);
       }
     }
     renderPiecesFromFen(fen, lastMove);
     renderReplayTrace(shown);
+    renderReplayChat(shownChats);
     renderReplayMoves(ply);
+    var current = rp.timeline[rp.index];
+    if (current && current.type === 'chat') { switchTab('chat'); }
+    else if (current && current.type === 'trace') { switchTab('trace'); }
     var info = rp.index === 0 ? '开局' : ('第 ' + ply + ' 手 / 共 ' + rp.log.moves.length + ' 手');
     $('rp-info').textContent = info + ' · 步骤 ' + rp.index + ' / ' + (rp.timeline.length - 1);
     $('turn-text').textContent = '复盘：' + info;
@@ -1465,6 +1592,28 @@
     list.scrollTop = list.scrollHeight;
   }
 
+  function renderReplayChat(entries) {
+    var list = $('chat-list');
+    if (!entries.length) {
+      list.innerHTML = '<p class="empty">这一步还没有留言</p>';
+      return;
+    }
+    var html = '';
+    var lastPly = -1;
+    entries.forEach(function (message) {
+      if (message.ply !== lastPly) {
+        html += '<div class="replay-sep">第 ' + (message.ply || '?') + ' 手</div>';
+        lastPly = message.ply;
+      }
+      var side = message.side;
+      var cls = side === 'user' ? 'user' : side;
+      var who = side === 'user' ? '你' : (side === 'red' ? '红方' : '黑方');
+      html += '<div class="msg ' + cls + '"><span class="who">' + who + '</span>' + esc(message.text) + '</div>';
+    });
+    list.innerHTML = html;
+    list.scrollTop = list.scrollHeight;
+  }
+
   function renderReplayMoves(currentPly) {
     var list = $('move-list');
     var html = '';
@@ -1483,6 +1632,20 @@
 
   // --------------------------------------------------------------------- init
   function bindEvents() {
+    $('btn-rematch').addEventListener('click', async function () {
+      if (state.replay && state.replay.active) {
+        state.replay.active = false;
+        $('replay-bar').classList.add('hidden');
+      }
+      try {
+        var data = await api('/api/rematch', { method: 'POST', body: {} });
+        if (data.snapshot) { applySnapshot(data.snapshot); }
+        connectEvents();
+        refreshState();
+      } catch (err) {
+        toast(err.message);
+      }
+    });
     $('btn-replay').addEventListener('click', enterReplay);
     $('rp-first').addEventListener('click', function () {
       if (state.replay.active) { state.replay.index = 0; renderReplay(); }
@@ -1639,6 +1802,8 @@
       setTimeout(function () { playCheckFx(state.snapshot); }, 350);
     } else if (fxParam === 'mate') {
       setTimeout(function () { playMateFx(state.snapshot); }, 350);
+    } else if (fxParam === 'end') {
+      setTimeout(function () { playEndFx(state.snapshot); }, 350);
     }
     var selectId = params.get('select');
     if (selectId && state.snapshot && state.snapshot.mode === 'human') {

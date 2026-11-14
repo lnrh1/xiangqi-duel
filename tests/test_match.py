@@ -87,6 +87,37 @@ class MatchTest(unittest.TestCase):
         with self.assertRaises(IllegalMove):
             match.submit_human_move("red_horse_1", "c2")
 
+    def test_chat_has_ply(self):
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="engine", depth=1),
+            human_side="red",
+            max_plies=10,
+        )
+        try:
+            match.start()
+            wait_for(lambda: match.game.status == "playing")
+            match.say("你好")
+            self.assertEqual(match.chat[-1]["ply"], 1)
+        finally:
+            match.stop()
+
+    def test_human_resign_reason(self):
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="engine", depth=1),
+            human_side="red",
+            max_plies=10,
+        )
+        try:
+            match.start()
+            wait_for(lambda: match.game.status == "playing")
+            match.resign("red", "实在下不动了")
+            self.assertEqual(match.game.result["code"], "resign")
+            self.assertIn("实在下不动了", match.game.result["reason"])
+        finally:
+            match.stop()
+
     def test_aivai_rejects_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),

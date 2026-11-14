@@ -14,18 +14,21 @@ class CheckmateTest(unittest.TestCase):
         self.assertEqual(game.status, "finished")
         self.assertEqual(game.result["winner"], RED)
         self.assertEqual(game.result["reason"], "checkmate")
+        self.assertEqual(game.result["code"], "checkmate")
 
     def test_stalemate_loses(self):
         game = Game(STALEMATE)
         self.assertEqual(game.status, "finished")
         self.assertEqual(game.result["winner"], RED)
         self.assertEqual(game.result["reason"], "stalemate")
+        self.assertEqual(game.result["code"], "stalemate")
 
     def test_resign(self):
         game = Game()
         game.resign(BLACK, "认输")
         self.assertEqual(game.result["winner"], RED)
         self.assertIn("认输", game.result["reason"])
+        self.assertEqual(game.result["code"], "resign")
 
 
 class RepetitionTest(unittest.TestCase):
@@ -44,18 +47,21 @@ class RepetitionTest(unittest.TestCase):
         self.assertEqual(game.status, "finished")
         self.assertEqual(game.result["winner"], None)
         self.assertEqual(game.result["reason"], "threefold repetition")
+        self.assertEqual(game.result["code"], "threefold")
 
     def test_sixty_move_rule(self):
         game = Game("4k4/1r7/9/9/9/9/9/9/9/3K1R3 w - - 119 60")
         game.play("red_chariot_1", "f1")
         self.assertEqual(game.status, "finished")
         self.assertEqual(game.result["reason"], "sixty-move rule")
+        self.assertEqual(game.result["code"], "sixty-move")
 
     def test_insufficient_material(self):
         game = Game("3ka4/9/9/9/9/9/9/9/9/3KA4 w - - 0 1")
         self.assertEqual(game.status, "finished")
         self.assertEqual(game.result["winner"], None)
         self.assertEqual(game.result["reason"], "insufficient material")
+        self.assertEqual(game.result["code"], "insufficient")
 
 
 class PlayTest(unittest.TestCase):
