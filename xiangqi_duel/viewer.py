@@ -32,7 +32,7 @@ TEMPLATE = """<!DOCTYPE html>
            font-size:var(--glyph,22px); transition:left .18s ease, top .18s ease; }
   .piece.red { background:radial-gradient(circle at 32% 28%, #fff7ea, #f0d6ae 70%); color:#b3261e; border:2px solid #b3261e; }
   .piece.black { background:radial-gradient(circle at 32% 28%, #f4f4f4, #d9d9d9 70%); color:#1d1d1f; border:2px solid #1d1d1f; }
-  .lastmove { position:absolute; width:12.6%; aspect-ratio:1; transform:translate(-50%,-50%); border:2px dashed rgba(160,96,20,.75); border-radius:8px; }
+  .lastmove { position:absolute; width:12.6%; aspect-ratio:1; transform:translate(-50%,-50%); background:rgba(217,164,65,.28); border-radius:10px; }
   .panel { background:linear-gradient(180deg,var(--panel),#1d1813); border:1px solid var(--line); border-radius:18px; padding:16px;
            display:flex; flex-direction:column; gap:12px; }
   .players { display:flex; gap:8px; flex-wrap:wrap; font-size:13px; color:var(--muted); }

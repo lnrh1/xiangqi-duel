@@ -330,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
             seed = int(body.get("seed") or 1)
         except (TypeError, ValueError):
             seed = 1
+        fen = body.get("fen") or None
         self.state.stop_match()
         try:
             match = Match(
@@ -338,6 +339,7 @@ class Handler(BaseHTTPRequestHandler):
                 human_side=human_side or None,
                 max_plies=max(20, min(max_plies, 1000)),
                 seed=seed,
+                fen=fen,
             )
             match.start()
         except Exception as exc:  # noqa: BLE001
