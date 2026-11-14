@@ -558,26 +558,26 @@
   .side-art.flip img { transform: scaleX(-1); }
 
   .lobby-actions { display: flex; gap: 14px; align-items: center; }
-  .sim-box {
-    width: min(520px, 94vw); background: var(--panel); border: 1px solid var(--line);
-    border-radius: 20px; padding: 16px;
+  .sim-bar {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: min(66vh, 100%); margin: 0 auto 10px; padding: 6px 12px;
+    border: 1px dashed #8b7bff; border-radius: 10px;
+    background: rgba(90, 76, 200, .12); color: #cfc7ff; font-size: 13px;
   }
-  .sim-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .sim-head strong { font-size: 16px; }
-  .sim-head .hint { margin-right: auto; }
-  .sim-board {
-    position: relative; width: min(400px, 76vw); aspect-ratio: 8 / 9;
-    margin: 10px auto; background: linear-gradient(150deg, #f0d6a4, #e2c084 60%, #d9b476);
-    border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(120, 80, 30, .35);
+  .sim-bar.hidden { display: none; }
+  .sim-bar strong { color: #e6e1ff; font-size: 14px; }
+  .sim-bar .hint { color: #b9b0ee; }
+  .sim-bar .btn { margin-left: auto; }
+  .board.simulating {
+    outline: 2px dashed #8b7bff; outline-offset: 7px;
+    box-shadow: 0 0 0 10px rgba(139, 123, 255, .08),
+                0 0 36px rgba(139, 123, 255, .30),
+                0 18px 44px rgba(0, 0, 0, .45);
   }
-  #sim-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #sim-svg line { stroke: var(--board-line); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
-  #sim-svg line.edge { stroke-width: 2.2; }
-  #sim-svg text { fill: rgba(120, 84, 40, .8); font-size: .42px; font-weight: 700; text-anchor: middle; }
-  .sim-board .piece { font-size: calc(var(--glyph) * .62); cursor: default; }
-  .sim-board .marker { cursor: pointer; }
-  .sim-actions { display: flex; gap: 8px; }
-  .sim-actions.hidden { display: none; }
+  .board.simulating::after {
+    content: ""; position: absolute; inset: -7px; border-radius: 20px;
+    pointer-events: none; box-shadow: inset 0 0 0 1px rgba(139, 123, 255, .35);
+  }
   .picker-box { width: min(560px, 100%); }
   .picker-list {
     display: flex; flex-direction: column; gap: 8px;
@@ -650,6 +650,11 @@
 
   <section class="board-panel">
     <div class="players-inline hidden" id="players-inline"></div>
+    <div class="sim-bar hidden" id="sim-bar">
+      <strong id="sim-title">推演棋盘</strong>
+      <span class="hint" id="sim-count"></span>
+      <button class="btn ghost" id="sim-exit">退出推演</button>
+    </div>
     <div class="board" id="board">
       <div class="grid" id="grid">
         <svg id="board-svg" viewBox="0 0 8 9" preserveAspectRatio="none"></svg>
@@ -776,24 +781,6 @@
   </div>
   <div class="lobby-actions">
     <button class="btn primary big" id="lobby-start" disabled>开始对局</button>
-  </div>
-</div>
-
-<div class="overlay hidden" id="sim-overlay">
-  <div class="sim-box">
-    <div class="sim-head">
-      <strong id="sim-title">推演棋盘</strong>
-      <span class="hint" id="sim-count"></span>
-      <button class="btn ghost" id="sim-exit">退出推演</button>
-    </div>
-    <div class="sim-board">
-      <div class="grid">
-        <svg id="sim-svg" viewBox="0 0 8 9" preserveAspectRatio="none"></svg>
-        <div class="pieces" id="sim-pieces"></div>
-        <div class="markers" id="sim-markers"></div>
-      </div>
-    </div>
-    <p class="hint">推演不影响真实对局，最多 8 步；双方棋子都可以走。推演较多会明显拖长对局时间。</p>
   </div>
 </div>
 
@@ -1061,6 +1048,7 @@
   function leftFor(x) { return x / 8 * 100; }
 
   function renderBoard(snap) {
+    if (state.sim) { renderSimBoard(); return; }
     var layer = piecesLayer;
     var seen = {};
     (snap.pieces || []).forEach(function (piece) {
@@ -2689,15 +2677,17 @@
     var sim = state.sim;
     if (!sim || !sim.snapshot) { return; }
     var snap = sim.snapshot;
+    $('sim-bar').classList.remove('hidden');
+    $('board').classList.add('simulating');
     $('sim-title').textContent = sim.human ? '我的推演' : (snap.turn === 'red' ? '红方推演' : '黑方推演');
     $('sim-count').textContent = (snap.plies || 0) + ' / ' + (snap.limit || 8) + ' 步';
-    if (!$('sim-svg').innerHTML) { $('sim-svg').innerHTML = $('board-svg').innerHTML; }
+    $('sim-exit').classList.toggle('hidden', !sim.human);
     var html = '';
     (snap.pieces || []).forEach(function (piece) {
       html += '<div class="piece ' + piece.color + '" data-id="' + esc(piece.id) + '" data-square="' + esc(piece.square) +
         '" style="left:' + leftFor(piece.x) + '%;top:' + topFor(piece.y) + '%"><span>' + esc(piece.glyph || '') + '</span></div>';
     });
-    $('sim-pieces').innerHTML = html;
+    piecesLayer.innerHTML = html;
     var markers = '';
     if (sim.human && state.simSelected) {
       ((snap.legal || {})[state.simSelected] || []).forEach(function (name) {
@@ -2706,17 +2696,29 @@
         markers += '<div class="marker" data-square="' + name + '" style="left:' + leftFor(x) + '%;top:' + topFor(y) + '%"></div>';
       });
     }
-    $('sim-markers').innerHTML = markers;
-    $('sim-exit').classList.toggle('hidden', !sim.human);
-    $('sim-overlay').classList.remove('hidden');
+    markersLayer.innerHTML = markers;
   }
 
   function hideSim() {
     state.sim = null;
     state.simSelected = null;
-    $('sim-overlay').classList.add('hidden');
-    $('sim-pieces').innerHTML = '';
-    $('sim-markers').innerHTML = '';
+    $('sim-bar').classList.add('hidden');
+    $('board').classList.remove('simulating');
+    if (state.snapshot) { renderBoard(state.snapshot); }
+  }
+
+  function simPieceClick(el) {
+    if (!state.sim || !state.sim.human) { return; }
+    var snap = state.sim.snapshot;
+    var pieceId = el.getAttribute('data-id');
+    var square = el.getAttribute('data-square');
+    if (state.simSelected) {
+      var legal = (snap.legal || {})[state.simSelected] || [];
+      if (legal.indexOf(square) !== -1) { simMove(state.simSelected, square); return; }
+    }
+    var targets = (snap.legal || {})[pieceId] || [];
+    state.simSelected = targets.length ? pieceId : null;
+    renderSimBoard();
   }
 
   function showSim(snapshot, side, human, ended) {
@@ -2783,26 +2785,6 @@
         try { await api('/api/sim/end', { method: 'POST', body: {} }); } catch (err) {}
       }
       hideSim();
-    });
-    $('sim-pieces').addEventListener('click', function (event) {
-      if (!state.sim || !state.sim.human) { return; }
-      var el = event.target.closest('.piece');
-      if (!el) { return; }
-      var snap = state.sim.snapshot;
-      var pieceId = el.getAttribute('data-id');
-      var square = el.getAttribute('data-square');
-      if (state.simSelected) {
-        var legal = (snap.legal || {})[state.simSelected] || [];
-        if (legal.indexOf(square) !== -1) { simMove(state.simSelected, square); return; }
-      }
-      var targets = (snap.legal || {})[pieceId] || [];
-      state.simSelected = targets.length ? pieceId : null;
-      renderSimBoard();
-    });
-    $('sim-markers').addEventListener('click', function (event) {
-      var marker = event.target.closest('.marker');
-      if (!marker || !state.sim || !state.sim.human || !state.simSelected) { return; }
-      simMove(state.simSelected, marker.getAttribute('data-square'));
     });
     $('btn-drawer').addEventListener('click', function () {
       $('side-panel').classList.toggle('open');
@@ -2955,6 +2937,7 @@
     });
 
     grid.addEventListener('click', function (event) {
+      if (state.sim) { return; }
       if (event.target.closest('.piece') || event.target.closest('.marker')) { return; }
       var rect = grid.getBoundingClientRect();
       var px = (event.clientX - rect.left) / rect.width * 8;
@@ -2968,7 +2951,15 @@
 
     markersLayer.addEventListener('click', function (event) {
       var marker = event.target.closest('.marker');
-      if (!marker || !state.selected || state.pendingMove) { return; }
+      if (!marker) { return; }
+      if (state.sim) {
+        if (state.sim.human && state.simSelected) {
+          event.stopPropagation();
+          simMove(state.simSelected, marker.getAttribute('data-square'));
+        }
+        return;
+      }
+      if (!state.selected || state.pendingMove) { return; }
       event.stopPropagation();
       sendMove(state.selected, marker.getAttribute('data-square'));
     });
@@ -2976,6 +2967,7 @@
     piecesLayer.addEventListener('click', function (event) {
       var el = event.target.closest('.piece');
       if (!el) { return; }
+      if (state.sim) { simPieceClick(el); return; }
       var snap = state.snapshot;
       if (!snap) { return; }
       var name = el.getAttribute('data-square');
