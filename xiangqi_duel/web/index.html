@@ -95,12 +95,17 @@
   .piece.selected { transform: translate(-50%, -50%) scale(1.07); box-shadow: 0 0 0 4px var(--accent), 0 6px 16px rgba(0,0,0,.45); }
   .piece.movable { cursor: pointer; }
   .marker {
-    position: absolute; width: 4.4%; aspect-ratio: 1; border-radius: 50%;
-    transform: translate(-50%, -50%); background: rgba(74, 107, 87, .8); z-index: 2;
+    position: absolute; width: 9%; aspect-ratio: 1; transform: translate(-50%, -50%);
+    z-index: 2; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  }
+  .marker::after {
+    content: ""; width: 48%; aspect-ratio: 1; border-radius: 50%;
+    background: rgba(74, 107, 87, .8);
     box-shadow: 0 0 0 2px rgba(250, 246, 235, .45), 0 1px 4px rgba(0, 0, 0, .28);
   }
-  .marker.capture {
-    background: rgba(158, 59, 46, .85); width: 4.2%; z-index: 5;
+  .marker.capture { z-index: 5; }
+  .marker.capture::after {
+    width: 44%; background: rgba(158, 59, 46, .85);
     box-shadow: 0 0 0 2px rgba(250, 246, 235, .7), 0 1px 5px rgba(0, 0, 0, .35);
   }
   .legend {
@@ -428,7 +433,9 @@
     fxReady: false,
     matchId: null,
     mateShown: false,
-    sound: false
+    sound: false,
+    pendingMove: false,
+    pendingPly: -1
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -504,6 +511,10 @@
       state.fxReady = false;
       state.mateShown = false;
       state.lastPly = -1;
+      state.pendingMove = false;
+    }
+    if (state.pendingMove && (snap.ply !== state.pendingPly || snap.turn !== snap.human_side)) {
+      state.pendingMove = false;
     }
     renderBoard(snap);
     renderStatus(snap);
@@ -568,6 +579,7 @@
         var dot = document.createElement('div');
         var occupied = (snap.pieces || []).some(function (p) { return p.square === name; });
         dot.className = 'marker' + (occupied ? ' capture' : '');
+        dot.setAttribute('data-square', name);
         dot.style.left = leftFor(x) + '%';
         dot.style.top = topFor(y) + '%';
         markersLayer.appendChild(dot);
@@ -729,6 +741,7 @@
   function handleSquare(name) {
     var snap = state.snapshot;
     if (!snap || snap.mode !== 'human' || snap.status !== 'playing' || snap.turn !== snap.human_side) { return; }
+    if (state.pendingMove) { return; }
     var legal = (snap.legal || {})[state.selected];
     if (state.selected && legal && legal.indexOf(name) !== -1) {
       sendMove(state.selected, name);
@@ -745,10 +758,19 @@
   }
 
   async function sendMove(pieceId, to) {
+    if (state.pendingMove) { return; }
+    var snap = state.snapshot;
+    if (!snap || snap.status !== 'playing') { return; }
+    var legal = (snap.legal || {})[pieceId];
+    if (!legal || legal.indexOf(to) === -1) { return; }
+    state.pendingMove = true;
+    state.pendingPly = snap.ply;
+    state.selected = null;
+    renderBoard(snap);
     try {
       await api('/api/move', { method: 'POST', body: { piece_id: pieceId, to: to } });
-      state.selected = null;
     } catch (err) {
+      state.pendingMove = false;
       toast(err.message);
     }
   }
@@ -1277,12 +1299,22 @@
     });
 
     grid.addEventListener('click', function (event) {
-      if (event.target.closest('.piece')) { return; }
+      if (event.target.closest('.piece') || event.target.closest('.marker')) { return; }
       var rect = grid.getBoundingClientRect();
-      var x = Math.round((event.clientX - rect.left) / rect.width * 8);
-      var y = Math.round((event.clientY - rect.top) / rect.height * 9);
+      var px = (event.clientX - rect.left) / rect.width * 8;
+      var py = (event.clientY - rect.top) / rect.height * 9;
+      var x = Math.round(px);
+      var y = Math.round(py);
       if (x < 0 || x > 8 || y < 0 || y > 9) { return; }
+      if (Math.abs(px - x) > 0.45 || Math.abs(py - y) > 0.45) { return; }
       handleSquare('abcdefghi'.charAt(x) + y);
+    });
+
+    markersLayer.addEventListener('click', function (event) {
+      var marker = event.target.closest('.marker');
+      if (!marker || !state.selected || state.pendingMove) { return; }
+      event.stopPropagation();
+      sendMove(state.selected, marker.getAttribute('data-square'));
     });
 
     piecesLayer.addEventListener('click', function (event) {

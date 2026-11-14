@@ -108,6 +108,7 @@ def cmd_serve(args):
         registry=registry,
         games_dir=args.games_dir,
         password=args.password or os.environ.get("XIANGQI_DUEL_PASSWORD"),
+        username=args.user or os.environ.get("XIANGQI_DUEL_USER") or "duel",
     )
 
 
@@ -315,6 +316,7 @@ def build_parser():
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--games-dir", default=None)
     serve.add_argument("--password", default="", help="HTTP Basic 认证密码（也可用 XIANGQI_DUEL_PASSWORD）")
+    serve.add_argument("--user", default="", help="HTTP Basic 认证用户名（默认 duel，也可用 XIANGQI_DUEL_USER）")
     serve.set_defaults(func=cmd_serve)
 
     play = sub.add_parser("play", help="在终端运行一局")

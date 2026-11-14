@@ -37,9 +37,10 @@ def provider_catalog():
 
 
 class AppState:
-    def __init__(self, registry=None, games_dir=None, password=None):
+    def __init__(self, registry=None, games_dir=None, password=None, username="duel"):
         self.registry = registry or ModelRegistry()
         self.password = password or None
+        self.username = username or "duel"
         self.games_dir = games_dir or os.path.join(DEFAULT_HOME, "games")
         self.lock = threading.RLock()
         self.match = None
@@ -122,8 +123,13 @@ class Handler(BaseHTTPRequestHandler):
             decoded = base64.b64decode(header[6:]).decode("utf-8", "replace")
         except Exception:  # noqa: BLE001
             return False
-        given = decoded.split(":", 1)[-1]
-        return secrets.compare_digest(given, password)
+        if ":" not in decoded:
+            return False
+        user, given = decoded.split(":", 1)
+        return (
+            secrets.compare_digest(user, self.server.app.username)
+            and secrets.compare_digest(given, password)
+        )
 
     def _require_auth(self):
         if self._authorized():
@@ -412,15 +418,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-def create_server(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None):
+def create_server(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None, username="duel"):
     server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True
-    server.app = AppState(registry=registry, games_dir=games_dir, password=password)
+    server.app = AppState(registry=registry, games_dir=games_dir, password=password, username=username)
     return server
 
 
-def serve(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None):
-    server = create_server(host, port, registry=registry, games_dir=games_dir, password=password)
+def serve(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None, username="duel"):
+    server = create_server(host, port, registry=registry, games_dir=games_dir, password=password, username=username)
     print("象棋对弈 · Xiangqi Duel %s" % __version__)
     print("打开 http://%s:%d" % (host, port))
     if host not in ("127.0.0.1", "localhost"):
