@@ -245,6 +245,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             except ValueError as exc:
                 self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/resign":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            side = body.get("side") or match.human_side
+            if match.human_side is None or side != match.human_side:
+                self._json({"ok": False, "error": "只有人类一方可以认输"}, status=400)
+                return
+            match.resign(side, "人类认输")
+            self._json({"ok": True})
         elif path == "/api/stop":
             self.state.stop_match()
             self._json({"ok": True})

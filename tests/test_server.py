@@ -164,3 +164,59 @@ class ServerTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
         self.assertIn("模型库", data["error"])
+
+
+class ResignTest(unittest.TestCase):
+    def test_human_can_resign(self):
+        import json as _json
+        import threading as _threading
+        import time as _time
+        import urllib.request as _urllib
+        from xiangqi_duel.models import ModelRegistry as _Registry
+        from xiangqi_duel.server import create_server as _create
+
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = _Registry(os.path.join(tmp, "models.json"))
+            server = _create("127.0.0.1", 0, registry=registry, games_dir=os.path.join(tmp, "games"))
+            port = server.server_address[1]
+            thread = _threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = "http://127.0.0.1:%d" % port
+
+            def call(path, method="GET", body=None):
+                data = None
+                headers = {"Content-Type": "application/json"}
+                if body is not None:
+                    data = _json.dumps(body).encode()
+                request = _urllib.Request(base + path, data=data, headers=headers, method=method)
+                try:
+                    with _urllib.urlopen(request, timeout=15) as response:
+                        return response.status, _json.loads(response.read().decode())
+                except _urllib.error.HTTPError as exc:
+                    return exc.code, _json.loads(exc.read().decode() or "{}")
+
+            try:
+                status, data = call("/api/new", "POST", {
+                    "red": {"kind": "human"},
+                    "black": {"kind": "engine", "depth": 1},
+                    "human_side": "red",
+                    "max_plies": 20,
+                })
+                self.assertEqual(status, 200)
+                status, data = call("/api/resign", "POST", {"side": "red"})
+                self.assertEqual(status, 200)
+                self.assertTrue(data["ok"])
+                deadline = _time.time() + 10
+                snapshot = None
+                while _time.time() < deadline:
+                    status, data = call("/api/state")
+                    snapshot = data["snapshot"]
+                    if snapshot and snapshot["status"] == "finished":
+                        break
+                    _time.sleep(0.1)
+                self.assertEqual(snapshot["status"], "finished")
+                self.assertEqual(snapshot["result"]["winner"], "black")
+                self.assertIn("认输", snapshot["result"]["reason"])
+            finally:
+                server.shutdown()
+                server.server_close()

@@ -276,6 +276,9 @@ class Match:
                     with self.lock:
                         for key in ("input", "output", "total"):
                             self.usage[side][key] += decision.usage.get(key, 0)
+                    with self.lock:
+                        if self.game.status != "playing":
+                            break
                     if decision.resign:
                         self.game.resign(side, decision.comment or "认输")
                         break

@@ -190,6 +190,7 @@ xiangqi-duel selftest
 | POST | /api/new | 开始对局 |
 | POST | /api/move | 人类走子 |
 | POST | /api/say | 人类发言 |
+| POST | /api/resign | 人类认输 |
 | POST | /api/stop | 终止对局 |
 | GET | /api/log | 当前对局的完整日志 |
 

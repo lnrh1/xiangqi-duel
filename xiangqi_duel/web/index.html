@@ -53,6 +53,7 @@
   .btn.primary { background: linear-gradient(160deg, #e0b25c, #bf8a2f); border-color: transparent; color: #221a10; font-weight: 700; }
   .btn.primary:hover { filter: brightness(1.06); }
   .btn.ghost { background: transparent; }
+  .btn.hidden { display: none; }
   .btn.big { padding: 12px 26px; font-size: 16px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .layout {
@@ -243,6 +244,7 @@
   </div>
   <div class="top-actions">
     <button id="btn-new" class="btn primary">新对局</button>
+    <button id="btn-resign" class="btn hidden">认输</button>
     <button id="btn-stop" class="btn">停止</button>
   </div>
 </header>
@@ -421,6 +423,9 @@
     var traceTab = $('tab-trace');
     if (snap.mode === 'human') { traceTab.classList.add('hidden'); }
     else { traceTab.classList.remove('hidden'); }
+    var resignBtn = $('btn-resign');
+    if (snap.mode === 'human' && snap.status === 'playing') { resignBtn.classList.remove('hidden'); }
+    else { resignBtn.classList.add('hidden'); }
     var chatInput = $('chat-input');
     var hint = $('chat-hint');
     if (snap.mode === 'human') {
@@ -879,6 +884,11 @@
       }
       var delId = event.target.getAttribute('data-del');
       if (delId) { removeModel(delId); }
+    });
+
+    $('btn-resign').addEventListener('click', function () {
+      if (!window.confirm('确定认输吗？')) { return; }
+      api('/api/resign', { method: 'POST', body: {} }).catch(function (err) { toast(err.message); });
     });
 
     $('btn-stop').addEventListener('click', function () {
