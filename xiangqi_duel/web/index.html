@@ -1533,6 +1533,7 @@
     if (!state.fxReady) {
       state.fxReady = true;
       state.lastPly = snap.ply;
+      if (snap.status === 'finished') { state.mateShown = true; }
       return;
     }
     if (snap.status === 'finished' && snap.result && !state.mateShown) {
@@ -2019,6 +2020,13 @@
     if (params.get('setup') === '1') { openSetup(); }
     var wantedTab = params.get('tab');
     if (wantedTab === 'chat' || wantedTab === 'trace') { switchTab(wantedTab); }
+    var hoverParam = params.get('hover');
+    if (hoverParam !== null) {
+      setTimeout(function () {
+        var row = document.querySelector('#move-list li[data-index="' + parseInt(hoverParam, 10) + '"]');
+        if (row) { startHoverAnimation(row); }
+      }, 900);
+    }
     var replayParam = params.get('replay');
     if (replayParam) {
       setTimeout(function () {
