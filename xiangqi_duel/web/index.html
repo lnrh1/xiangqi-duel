@@ -159,7 +159,8 @@
   .piece.selected { transform: translate(-50%, -50%) scale(1.07); box-shadow: 0 0 0 4px var(--accent), 0 6px 16px rgba(0,0,0,.45); }
   .piece.animating {
     z-index: 7;
-    transition: left .34s cubic-bezier(.22, .9, .25, 1), top .34s cubic-bezier(.22, .9, .25, 1);
+    transition: left 1s cubic-bezier(.455, .03, .515, .955),
+                top 1s cubic-bezier(.455, .03, .515, .955);
   }
   .piece.movable { cursor: pointer; }
   .marker {
@@ -1863,8 +1864,8 @@
         anim.loopTimer = 0;
         if (anim.stop) { restoreHoverBoard(); return; }
         animateHoverCycle();
-      }, 650);
-    }, 380);
+      }, 800);
+    }, 1040);
   }
 
   function startHoverAnimation(li) {
