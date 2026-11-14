@@ -80,6 +80,15 @@
     box-shadow: -12px 0 40px rgba(0, 0, 0, .45);
   }
   .layout.spectate .side-panel.open { transform: none; }
+  .layout.replay {
+    grid-template-columns: minmax(320px, 720px) minmax(300px, 400px);
+  }
+  .layout.replay .trace-panel { display: none; }
+  .layout.replay .drawer-close { display: none; }
+  .layout.replay .side-panel {
+    position: static; transform: none; width: auto;
+    max-height: calc(100vh - 110px); box-shadow: none;
+  }
   .drawer-close { display: none; align-self: flex-end; }
   .layout.spectate .drawer-close { display: inline-block; }
   .layout.spectate .players { display: none; }
@@ -860,6 +869,7 @@
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-rematch').classList.toggle('hidden', !finished);
     var spectate = snap.mode !== 'human';
+    $('layout').classList.remove('replay');
     $('layout').classList.toggle('spectate', spectate);
     $('layout').classList.toggle('human', !spectate);
     $('panel-red').classList.toggle('hidden', !spectate);
@@ -1939,7 +1949,9 @@
     $('replay-bar').classList.remove('hidden');
     $('panel-red').classList.add('hidden');
     $('panel-black').classList.add('hidden');
+    $('layout').classList.add('replay');
     $('side-panel').classList.add('open');
+    $('btn-drawer').classList.add('hidden');
     $('tab-trace').classList.remove('hidden');
     switchTab('trace');
     renderReplay();
@@ -1949,8 +1961,12 @@
     if (!state.replay || !state.replay.active) { return; }
     state.replay.active = false;
     state.movesSignature = "";
+    $('layout').classList.remove('replay');
     $('replay-bar').classList.add('hidden');
     $('tab-trace').classList.add('hidden');
+    if (state.snapshot && state.snapshot.mode === 'aivai') {
+      $('btn-drawer').classList.remove('hidden');
+    }
     if (state.snapshot && state.snapshot.mode === 'aivai') {
       $('panel-red').classList.remove('hidden');
       $('panel-black').classList.remove('hidden');
@@ -2176,7 +2192,7 @@
   function entryLabel(entry) {
     if (!entry) { return '空位 · 点击选择'; }
     if (entry.kind === 'engine') { return '本地引擎（离线）'; }
-    if (entry.kind === 'human') { return '你（人类）'; }
+    if (entry.kind === 'human') { return '我（人类）'; }
     return entry.label || entry.id;
   }
 
@@ -2197,13 +2213,17 @@
     $('side-red').classList.toggle('locked', mode === 'human');
     $('lobby-hint').textContent = mode === 'human'
       ? '红方固定为你，点击黑方选择模型'
-      : '点击两侧选择棋手';
+      : '两边默认空位；选一个模型后另一边会自动填为「我」';
     updateLobby();
     setScreen('lobby');
   }
 
   function pickerEntries() {
-    var entries = [{ kind: 'engine', label: '本地引擎（离线）', sub: '无需 API' }];
+    var entries = [];
+    if (state.lobby.mode !== 'human') {
+      entries.push({ kind: 'human', label: '我（人类）', sub: '自己坐这一边' });
+    }
+    entries.push({ kind: 'engine', label: '本地引擎（离线）', sub: '无需 API' });
     state.models.forEach(function (model) {
       entries.push({
         kind: 'model',
@@ -2234,15 +2254,26 @@
   function choosePick(button) {
     var side = state.pickerSide;
     if (!side) { return; }
+    var other = side === 'red' ? 'black' : 'red';
     var value = button.getAttribute('data-value') || '';
-    if (value === 'engine') {
-      state.lobby[side] = { kind: 'engine' };
-    } else if (value.indexOf('model:') === 0) {
-      state.lobby[side] = {
-        kind: 'model',
-        id: value.slice(6),
-        label: button.getAttribute('data-label') || ''
-      };
+    if (value === 'human') {
+      state.lobby[side] = { kind: 'human' };
+      if (state.lobby[other] && state.lobby[other].kind === 'human') {
+        state.lobby[other] = null;
+      }
+    } else {
+      if (value === 'engine') {
+        state.lobby[side] = { kind: 'engine' };
+      } else if (value.indexOf('model:') === 0) {
+        state.lobby[side] = {
+          kind: 'model',
+          id: value.slice(6),
+          label: button.getAttribute('data-label') || ''
+        };
+      }
+      if (!state.lobby[other]) {
+        state.lobby[other] = { kind: 'human' };
+      }
     }
     $('picker').classList.add('hidden');
     updateLobby();
