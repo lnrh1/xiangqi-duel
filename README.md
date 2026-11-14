@@ -228,7 +228,10 @@ python3 -m unittest discover -s tests -v
 ## 示例对局
 
 `examples/demo-game.json` 是内置引擎自战 93 手的完整日志（三次重复判和），
-`examples/demo-replay.html` 是导出的离线回放页面，双击即可查看。
+`examples/demo-replay.html` 是对应的离线回放。
+
+`examples/deepseek-game.json` 是真实 DeepSeek 自战 24 手的日志，
+包含双方的中文思考和全部工具调用；`examples/deepseek-replay.html` 是回放页面。
 
 ## English
 

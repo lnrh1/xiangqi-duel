@@ -8,3 +8,5 @@
 ```bash
 xiangqi-duel replay examples/demo-game.json --html my-replay.html
 ```
+- `deepseek-game.json` —— 真实 DeepSeek 自战 24 手（含中文思考与工具调用）
+- `deepseek-replay.html` —— 对应的离线回放
