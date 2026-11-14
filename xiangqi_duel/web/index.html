@@ -2200,29 +2200,29 @@
     var lobby = state.lobby;
     $('side-red-label').textContent = entryLabel(lobby.red);
     $('side-black-label').textContent = entryLabel(lobby.black);
-    var bothHuman = lobby.red && lobby.black && lobby.red.kind === 'human' && lobby.black.kind === 'human';
-    var noHuman = lobby.mode === 'human' && lobby.red && lobby.black &&
-      lobby.red.kind !== 'human' && lobby.black.kind !== 'human';
-    $('lobby-start').disabled = !(lobby.red && lobby.black) || bothHuman || noHuman;
+    var humans = [lobby.red, lobby.black].filter(function (entry) {
+      return entry && entry.kind === 'human';
+    }).length;
+    var needHuman = lobby.mode === 'human' ? 1 : 0;
+    $('lobby-start').disabled = !(lobby.red && lobby.black) || humans !== needHuman;
   }
 
   function openLobby(mode) {
-    state.lobby = {
-      mode: mode,
-      red: mode === 'human' ? { kind: 'human' } : null,
-      black: null
-    };
-    $('lobby-title').textContent = mode === 'human' ? '人机对弈 · 选择 AI' : 'AI 对战 AI · 选择双方';
+    state.lobby = { mode: mode, red: null, black: null };
+    $('lobby-title').textContent = mode === 'human' ? '人机对弈 · 选择双方' : 'AI 对战 AI · 选择双方';
     $('side-red').classList.remove('locked');
     $('lobby-hint').textContent = mode === 'human'
-      ? '点一侧选择「我」或 AI；另一边会自动补位'
-      : '两边默认空位；选一个模型后另一边会自动填为「我」';
+      ? '选一边的模型，另一边会自动变成「我」'
+      : '两边各选一个模型；这个模式不出现「我」';
     updateLobby();
     setScreen('lobby');
   }
 
   function pickerEntries() {
-    var entries = [{ kind: 'human', label: '我（人类）', sub: '自己坐这一边' }];
+    var entries = [];
+    if (state.lobby.mode === 'human') {
+      entries.push({ kind: 'human', label: '我（人类）', sub: '自己坐这一边' });
+    }
     entries.push({ kind: 'engine', label: '本地引擎（离线）', sub: '无需 API' });
     state.models.forEach(function (model) {
       entries.push({
@@ -2262,22 +2262,27 @@
     if (!side) { return; }
     var other = side === 'red' ? 'black' : 'red';
     var value = button.getAttribute('data-value') || '';
+    function setSide(kind, label) {
+      if (kind === 'engine') {
+        state.lobby[side] = { kind: 'engine' };
+      } else if (kind === 'human') {
+        state.lobby[side] = { kind: 'human' };
+      } else if (kind.indexOf('model:') === 0) {
+        state.lobby[side] = {
+          kind: 'model',
+          id: kind.slice(6),
+          label: label || ''
+        };
+      }
+    }
     if (value === 'human') {
-      state.lobby[side] = { kind: 'human' };
+      setSide('human');
       if (state.lobby[other] && state.lobby[other].kind === 'human') {
         state.lobby[other] = null;
       }
     } else {
-      if (value === 'engine') {
-        state.lobby[side] = { kind: 'engine' };
-      } else if (value.indexOf('model:') === 0) {
-        state.lobby[side] = {
-          kind: 'model',
-          id: value.slice(6),
-          label: button.getAttribute('data-label') || ''
-        };
-      }
-      if (!state.lobby[other]) {
+      setSide(value, button.getAttribute('data-label'));
+      if (state.lobby.mode === 'human') {
         state.lobby[other] = { kind: 'human' };
       }
     }
