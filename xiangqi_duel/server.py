@@ -15,6 +15,7 @@ from . import __version__
 from .arena import Match, PlayerSpec
 from .game import IllegalMove
 from .llm import LLMError, PRESETS, list_models
+from .tools import tool_specs
 from .models import DEFAULT_HOME, ModelRegistry, RegistryError
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -200,6 +201,21 @@ class Handler(BaseHTTPRequestHandler):
             self._static("favicon.svg")
         elif path == "/api/health":
             self._json({"ok": True, "version": __version__})
+        elif path == "/api/tools":
+            specs = tool_specs()
+            self._json(
+                {
+                    "ok": True,
+                    "tools": [
+                        {
+                            "name": spec["function"]["name"],
+                            "description": spec["function"].get("description", ""),
+                        }
+                        for spec in specs
+                    ],
+                    "required": ["move"],
+                }
+            )
         elif path == "/api/models":
             self._json(
                 {
@@ -341,6 +357,7 @@ class Handler(BaseHTTPRequestHandler):
                     human_side=match.human_side,
                     max_plies=match.max_plies,
                     players=players,
+                    enabled_tools=match.enabled_tools,
                 )
                 new_match.start()
                 self.state.set_match(new_match)
@@ -407,6 +424,7 @@ class Handler(BaseHTTPRequestHandler):
                 max_plies=max(20, min(max_plies, 1000)),
                 seed=seed,
                 fen=fen,
+                enabled_tools=body.get("tools") if isinstance(body.get("tools"), list) else None,
             )
             match.start()
         except Exception as exc:  # noqa: BLE001

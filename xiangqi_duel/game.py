@@ -193,6 +193,12 @@ class Game:
         self._finish(None, reason, "aborted")
         return self.result
 
+    def declare_draw(self, reason="双方同意和棋"):
+        if self.status != "playing":
+            return self.result
+        self._finish(None, reason, "agreement")
+        return self.result
+
     def resign(self, side, reason="resignation"):
         if self.status != "playing":
             return self.result

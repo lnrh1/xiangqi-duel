@@ -399,6 +399,113 @@
   }
   .btn.on { border-color: var(--accent); color: var(--accent); }
 
+  .screen {
+    position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 26px; padding: 40px 24px;
+    overflow-y: auto;
+    background: radial-gradient(900px 600px at 50% 0%, #2b2118, #14100c 70%);
+  }
+  .screen.hidden { display: none; }
+  .screen-head { width: min(960px, 100%); display: flex; align-items: center; gap: 14px; }
+  .screen-head h2 { margin: 0; font-size: 20px; }
+  .screen-head .hint { margin-left: auto; }
+  .home-inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+  .home-badge {
+    width: 132px; height: 132px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #fff7ea, #e8c68f 70%);
+    border: 4px solid #a83226; display: grid; place-items: center;
+    box-shadow: 0 0 0 10px rgba(168, 50, 38, .12), 0 0 60px rgba(168, 50, 38, .35),
+                0 18px 40px rgba(0, 0, 0, .5);
+  }
+  .home-badge span {
+    font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+    font-size: 66px; color: #a83226; font-weight: 800;
+  }
+  .home-inner h1 { font-size: clamp(30px, 5vw, 46px); letter-spacing: .3em; margin: 12px 0 0; }
+  .home-sub { color: var(--muted); letter-spacing: .2em; }
+  .home-actions { display: flex; gap: 14px; margin-top: 10px; }
+  .mode-cards {
+    display: grid; grid-template-columns: repeat(2, minmax(260px, 380px));
+    gap: 22px; width: min(860px, 100%);
+  }
+  .mode-card {
+    position: relative; text-align: left; padding: 24px; border-radius: 22px;
+    border: 1px solid var(--line); background: linear-gradient(150deg, #2a2118, #191410);
+    color: var(--text); cursor: pointer; overflow: hidden;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }
+  .mode-card:hover {
+    transform: translateY(-4px); border-color: var(--accent);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  }
+  .mode-card h3 { margin: 18px 0 6px; font-size: 20px; }
+  .mode-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .mode-art { display: flex; align-items: center; gap: 14px; height: 96px; }
+  .mode-vs { color: var(--muted); font-size: 12px; letter-spacing: .2em; }
+  .piece-glyph {
+    width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+    background: radial-gradient(circle at 32% 28%, #fff7ea, #f0d6ae 70%);
+    color: #b3261e; border: 3px solid #b3261e;
+    font-family: "Kaiti SC", "STKaiti", "KaiTi", serif; font-size: 32px; font-weight: 800;
+  }
+  .piece-glyph.black {
+    background: radial-gradient(circle at 32% 28%, #f4f4f4, #d9d9d9 70%);
+    color: #1d1d1f; border-color: #1d1d1f;
+  }
+  .lobby-cards {
+    display: grid; grid-template-columns: repeat(2, minmax(280px, 360px));
+    gap: 22px; width: min(800px, 100%);
+  }
+  .side-card {
+    display: flex; align-items: center; gap: 16px; padding: 22px; border-radius: 20px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    cursor: pointer; text-align: left; transition: border-color .18s, transform .18s;
+  }
+  .side-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .side-card.locked { cursor: default; opacity: .95; }
+  .side-avatar {
+    width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+    background: radial-gradient(circle at 32% 28%, #fff7ea, #f0d6ae 70%);
+    color: #b3261e; border: 3px solid #b3261e;
+    font-family: "Kaiti SC", "STKaiti", "KaiTi", serif; font-size: 30px; font-weight: 800;
+  }
+  .side-card.black .side-avatar {
+    background: radial-gradient(circle at 32% 28%, #f4f4f4, #d9d9d9 70%);
+    color: #1d1d1f; border-color: #1d1d1f;
+  }
+  .side-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .side-info strong { font-size: 16px; }
+  .side-info span { color: var(--muted); font-size: 13px; }
+  .side-edit { margin-left: auto; color: var(--accent); font-size: 12px; }
+  .lobby-actions { display: flex; gap: 14px; align-items: center; }
+  .picker-box { width: min(560px, 100%); }
+  .picker-list {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 50vh; overflow-y: auto; margin-top: 12px;
+  }
+  .picker-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    cursor: pointer; text-align: left;
+  }
+  .picker-item:hover { border-color: var(--accent); }
+  .picker-item .name { font-weight: 600; }
+  .picker-item .sub { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .tool-toggles {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px;
+  }
+  .tool-toggle {
+    display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2);
+    font-size: 13px;
+  }
+  .tool-toggle input { margin-top: 3px; accent-color: #d9a441; }
+  .tool-toggle.locked { opacity: .75; }
+  #setup .side-config, #setup .setup-actions { display: none; }
+  #setup .setup-section:nth-of-type(3) { display: none; }
+  @media (max-width: 900px) {
+    .mode-cards, .lobby-cards { grid-template-columns: 1fr; }
+  }
   @media (max-width: 940px) {
     .layout { grid-template-columns: 1fr; padding: 10px 14px 30px; }
     .board { width: min(88vw, 560px); }
@@ -496,10 +603,77 @@
   <canvas class="fx-canvas" id="fx-canvas"></canvas>
 </div>
 
+<div class="screen" id="home">
+  <div class="home-inner">
+    <div class="home-badge"><span>帥</span></div>
+    <h1>象棋对弈</h1>
+    <p class="home-sub">双 AI 观战 · 人机对弈 · 模型库</p>
+    <div class="home-actions">
+      <button class="btn primary big" id="home-new">新对局</button>
+      <button class="btn big" id="home-settings">设置</button>
+    </div>
+  </div>
+</div>
+
+<div class="screen hidden" id="modes">
+  <div class="screen-head">
+    <button class="btn ghost" id="modes-back">← 返回</button>
+    <h2>选择模式</h2>
+    <span class="hint">两种模式共用同一套模型与工具</span>
+  </div>
+  <div class="mode-cards">
+    <button class="mode-card human" id="mode-human">
+      <div class="mode-art">
+        <span class="piece-glyph">帥</span><span class="mode-vs">VS</span><span class="piece-glyph black">將</span>
+      </div>
+      <h3>我对战 AI</h3>
+      <p>你执一方，AI 执另一方。可以边下边聊，AI 的内部过程对你隐藏。</p>
+    </button>
+    <button class="mode-card ai" id="mode-ai">
+      <div class="mode-art">
+        <span class="piece-glyph">帥</span><span class="mode-vs">VS</span><span class="piece-glyph black">將</span>
+      </div>
+      <h3>AI 对战 AI</h3>
+      <p>双方各自思考、随时互发消息，你全程观战，能看到思考与工具调用。</p>
+    </button>
+  </div>
+</div>
+
+<div class="screen hidden" id="lobby">
+  <div class="screen-head">
+    <button class="btn ghost" id="lobby-back">← 返回</button>
+    <h2 id="lobby-title">选择棋手</h2>
+    <span class="hint" id="lobby-hint"></span>
+  </div>
+  <div class="lobby-cards">
+    <button class="side-card red" id="side-red">
+      <div class="side-avatar">帥</div>
+      <div class="side-info"><strong>红方</strong><span id="side-red-label">空位 · 点击选择</span></div>
+      <span class="side-edit">选择</span>
+    </button>
+    <button class="side-card black" id="side-black">
+      <div class="side-avatar">將</div>
+      <div class="side-info"><strong>黑方</strong><span id="side-black-label">空位 · 点击选择</span></div>
+      <span class="side-edit">选择</span>
+    </button>
+  </div>
+  <div class="lobby-actions">
+    <button class="btn primary big" id="lobby-start" disabled>开始对局</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="picker">
+  <div class="setup picker-box">
+    <div class="setup-head"><h2 id="picker-title">选择棋手</h2><button class="btn ghost" id="picker-close">关闭</button></div>
+    <div class="picker-list" id="picker-list"></div>
+    <p class="hint">没有想要的模型？到「设置 → 模型库」添加。</p>
+  </div>
+</div>
+
 <div class="overlay hidden" id="setup">
   <div class="setup">
     <div class="setup-head">
-      <h2>开始新对局</h2>
+      <h2 id="settings-title">设置</h2>
       <button class="btn ghost" id="setup-close">关闭</button>
     </div>
 
@@ -520,6 +694,14 @@
       </div>
       <div class="suggestions" id="model-suggestions"></div>
       <p class="hint" id="add-result"></p>
+    </section>
+
+    <section class="setup-section">
+      <div class="section-head">
+        <h3>工具开关</h3>
+        <span class="hint">move 必选；关闭的工具不会发给模型</span>
+      </div>
+      <div class="tool-toggles" id="tool-toggles"></div>
     </section>
 
     <section class="setup-section">
@@ -566,7 +748,11 @@
     hoverTimer: 0,
     hoverActive: false,
     hoverAnim: null,
-    replay: { active: false, log: null, timeline: [], index: 0 }
+    replay: { active: false, log: null, timeline: [], index: 0 },
+    lobby: { mode: 'aivai', red: null, black: null },
+    pickerSide: null,
+    tools: null,
+    toolCatalog: []
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -1082,10 +1268,21 @@
     var maxPlies = parseInt($('max-plies').value, 10) || 300;
     toast('');
     try {
-      await api('/api/new', { method: 'POST', body: { red: red, black: black, human_side: humanSide, max_plies: maxPlies } });
+      await api('/api/new', {
+        method: 'POST',
+        body: {
+          red: red,
+          black: black,
+          human_side: humanSide,
+          max_plies: maxPlies,
+          tools: state.tools
+        }
+      });
       closeSetup();
       state.selected = null;
       fitBoard();
+      setScreen(null);
+      $('picker').classList.add('hidden');
       connectEvents();
       refreshState();
     } catch (err) {
@@ -1892,6 +2089,153 @@
     }
   }
 
+  // ------------------------------------------------------------------ screens
+  function setScreen(name) {
+    ['home', 'modes', 'lobby'].forEach(function (key) {
+      var el = $(key);
+      if (el) { el.classList.toggle('hidden', key !== name); }
+    });
+  }
+
+  function showHome() {
+    $('picker').classList.add('hidden');
+    $('setup').classList.add('hidden');
+    setScreen('home');
+  }
+
+  function entryValue(entry) {
+    if (!entry) { return null; }
+    if (entry.kind === 'engine') { return 'engine'; }
+    if (entry.kind === 'human') { return 'human'; }
+    return 'model:' + entry.id;
+  }
+
+  function entryLabel(entry) {
+    if (!entry) { return '空位 · 点击选择'; }
+    if (entry.kind === 'engine') { return '本地引擎（离线）'; }
+    if (entry.kind === 'human') { return '你（人类）'; }
+    return entry.label || entry.id;
+  }
+
+  function updateLobby() {
+    var lobby = state.lobby;
+    $('side-red-label').textContent = entryLabel(lobby.red);
+    $('side-black-label').textContent = entryLabel(lobby.black);
+    $('lobby-start').disabled = !(lobby.red && lobby.black);
+  }
+
+  function openLobby(mode) {
+    state.lobby = {
+      mode: mode,
+      red: mode === 'human' ? { kind: 'human' } : null,
+      black: null
+    };
+    $('lobby-title').textContent = mode === 'human' ? '人机对弈 · 选择 AI' : 'AI 对战 AI · 选择双方';
+    $('side-red').classList.toggle('locked', mode === 'human');
+    $('lobby-hint').textContent = mode === 'human'
+      ? '红方固定为你，点击黑方选择模型'
+      : '点击两侧选择棋手';
+    updateLobby();
+    setScreen('lobby');
+  }
+
+  function pickerEntries() {
+    var entries = [{ kind: 'engine', label: '本地引擎（离线）', sub: '无需 API' }];
+    state.models.forEach(function (model) {
+      entries.push({
+        kind: 'model',
+        id: model.id,
+        label: model.label,
+        sub: model.provider + ' · ' + model.model
+      });
+    });
+    return entries;
+  }
+
+  function openPicker(side) {
+    if (state.lobby.mode === 'human' && side === 'red') { return; }
+    state.pickerSide = side;
+    $('picker-title').textContent = side === 'red' ? '选择红方' : '选择黑方';
+    var html = '';
+    pickerEntries().forEach(function (entry) {
+      var value = entry.kind === 'model' ? 'model:' + entry.id : entry.kind;
+      html += '<button class="picker-item" data-kind="' + entry.kind + '" data-value="' + value +
+        '" data-id="' + (entry.id || '') + '" data-label="' + esc(entry.label) + '">' +
+        '<span class="name">' + esc(entry.label) + '</span>' +
+        '<span class="sub">' + esc(entry.sub || '') + '</span></button>';
+    });
+    $('picker-list').innerHTML = html;
+    $('picker').classList.remove('hidden');
+  }
+
+  function choosePick(button) {
+    var side = state.pickerSide;
+    if (!side) { return; }
+    var value = button.getAttribute('data-value') || '';
+    if (value === 'engine') {
+      state.lobby[side] = { kind: 'engine' };
+    } else if (value.indexOf('model:') === 0) {
+      state.lobby[side] = {
+        kind: 'model',
+        id: value.slice(6),
+        label: button.getAttribute('data-label') || ''
+      };
+    }
+    $('picker').classList.add('hidden');
+    updateLobby();
+  }
+
+  async function startFromLobby() {
+    var lobby = state.lobby;
+    if (!lobby.red || !lobby.black) { return; }
+    redSelect.value = entryValue(lobby.red);
+    blackSelect.value = entryValue(lobby.black);
+    await startMatch();
+  }
+
+  async function loadTools() {
+    try {
+      var data = await api('/api/tools');
+      state.toolCatalog = data.tools || [];
+      renderToolToggles();
+    } catch (err) {
+      $('tool-toggles').innerHTML = '<p class="hint">工具列表加载失败</p>';
+    }
+  }
+
+  function renderToolToggles() {
+    var html = '';
+    state.toolCatalog.forEach(function (tool) {
+      var required = tool.name === 'move';
+      var checked = required || !state.tools || state.tools.indexOf(tool.name) !== -1;
+      html += '<label class="tool-toggle' + (required ? ' locked' : '') + '">' +
+        '<input type="checkbox" data-tool="' + esc(tool.name) + '"' +
+        (checked ? ' checked' : '') + (required ? ' disabled' : '') + '>' +
+        '<span><strong>' + esc(tool.name) + '</strong><br>' +
+        '<span class="hint">' + esc((tool.description || '').slice(0, 56)) + '</span></span></label>';
+    });
+    $('tool-toggles').innerHTML = html || '<p class="hint">没有可用工具</p>';
+  }
+
+  function collectTools() {
+    var names = ['move'];
+    var boxes = $('tool-toggles').querySelectorAll('input[data-tool]');
+    for (var i = 0; i < boxes.length; i += 1) {
+      if (boxes[i].checked && names.indexOf(boxes[i].getAttribute('data-tool')) === -1) {
+        names.push(boxes[i].getAttribute('data-tool'));
+      }
+    }
+    state.tools = names;
+    try { localStorage.setItem('xiangqi.tools', JSON.stringify(names)); } catch (err) {}
+  }
+
+  function openSettings() {
+    $('setup').classList.remove('hidden');
+    $('home').classList.add('hidden');
+    loadModels().catch(function (err) { toast(err.message); });
+    loadTools();
+  }
+
   // --------------------------------------------------------------------- init
   function bindEvents() {
     $('btn-rematch').addEventListener('click', async function () {
@@ -1950,7 +2294,25 @@
       if (event.key === 'ArrowLeft') { replayStep(-1); }
       if (event.key === 'ArrowRight') { replayStep(1); }
     });
-    $('btn-new').addEventListener('click', openSetup);
+    $('btn-new').addEventListener('click', showHome);
+    $('home-new').addEventListener('click', function () { setScreen('modes'); });
+    $('home-settings').addEventListener('click', openSettings);
+    $('modes-back').addEventListener('click', showHome);
+    $('mode-human').addEventListener('click', function () { openLobby('human'); });
+    $('mode-ai').addEventListener('click', function () { openLobby('aivai'); });
+    $('lobby-back').addEventListener('click', function () { setScreen('modes'); });
+    $('side-red').addEventListener('click', function () { openPicker('red'); });
+    $('side-black').addEventListener('click', function () { openPicker('black'); });
+    $('picker-close').addEventListener('click', function () { $('picker').classList.add('hidden'); });
+    $('picker').addEventListener('click', function (event) {
+      if (event.target === $('picker')) { $('picker').classList.add('hidden'); }
+    });
+    $('picker-list').addEventListener('click', function (event) {
+      var item = event.target.closest('.picker-item');
+      if (item) { choosePick(item); }
+    });
+    $('lobby-start').addEventListener('click', startFromLobby);
+    $('tool-toggles').addEventListener('change', collectTools);
     $('setup-close').addEventListener('click', closeSetup);
     $('setup').addEventListener('click', function (event) {
       if (event.target === $('setup')) { closeSetup(); }
@@ -2065,9 +2427,23 @@
       document.fonts.ready.then(function () { fitBoard(); }).catch(function () {});
     }
     window.requestAnimationFrame(function () { fitBoard(); });
+    try {
+      var savedTools = JSON.parse(localStorage.getItem('xiangqi.tools') || 'null');
+      if (Array.isArray(savedTools)) { state.tools = savedTools; }
+    } catch (err) {}
     state.staticMode = window.location.search.indexOf('static=1') !== -1;
     await refreshState();
-    if (!state.snapshot && !state.staticMode) { openSetup(); }
+    if (!state.snapshot && !state.staticMode) { showHome(); }
+    if (state.snapshot) { setScreen(null); }
+    var screenParams = new URLSearchParams(window.location.search);
+    var screenParam = screenParams.get('screen');
+    if (screenParam === 'home') { showHome(); }
+    else if (screenParam === 'modes') { setScreen('modes'); }
+    else if (screenParam === 'lobby') {
+      openLobby(screenParams.get('mode') === 'human' ? 'human' : 'aivai');
+    } else if (screenParam === 'settings') {
+      openSettings();
+    }
     var params = new URLSearchParams(window.location.search);
     if (params.get('setup') === '1') { openSetup(); }
     var wantedTab = params.get('tab');

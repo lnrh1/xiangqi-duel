@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import queue
 import random
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -36,17 +37,18 @@ SYSTEM_PROMPT = """你是一名中国象棋高手，正在参加一场正式对�
   60 回合无吃子判和。
 
 # 你的工具
-get_board、list_pieces、list_pieces_in_area、get_piece、describe_square、
-list_legal_moves、move、get_status、get_history、send_message、resign。
+list_pieces、list_pieces_in_area、get_piece、describe_square、list_legal_moves、
+move、get_status、get_history、send_message、offer_draw、note、resign。
 查坐标用 get_piece(棋子编号) 或 describe_square(格子)；
-按范围找子用 list_pieces_in_area(x_min, x_max, y_min, y_max)。
+按范围找子用 list_pieces_in_area(x_min, x_max, y_min, y_max)；想记计划用 note。
 
 # 对局要求
 1. 轮到你时，先用工具了解局面，然后必须调用且只调用一次 move(piece_id, to)。
 2. 不要用文字描述代替 move 工具调用；不要走对方的棋子。
 3. 想对对手说话就调用 send_message（每回合最多一条，80 字以内）。
 4. 只有败局已定时才 resign。
-5. 思考时用中文简要说明计划（一两句），然后立即调用工具。
+5. 思考可以自由展开，系统不限制步数和时间；但最终必须用 move 落子。
+6. 想提议和棋用 offer_draw（可附 note）；对手提议时你也调用 offer_draw 就是同意。
 """
 
 
@@ -63,6 +65,7 @@ class AgentDecision:
     error: str = ""
     fallback: bool = False
     resign_reason: str = ""
+    draw_offer: object = None
 
 
 def side_zh(color):
@@ -80,9 +83,9 @@ class LLMPlayer:
         client,
         config,
         emit=None,
-        fallback="random",
+        enabled_tools=None,
         seed=0,
-        max_steps=MAX_STEPS,
+        max_steps=0,
         max_blocks=MAX_BLOCKS,
         label="",
     ):
@@ -90,11 +93,12 @@ class LLMPlayer:
         self.client = client
         self.config = config
         self.emit = emit or (lambda event: None)
-        self.fallback = fallback
         self.rng = random.Random(seed)
         self.max_steps = max_steps
         self.max_blocks = max_blocks
         self.label = label or "%s / %s" % (config.provider, config.model)
+        self.enabled_tools = set(enabled_tools) if enabled_tools else None
+        self.notes = []
         self.blocks = []
         self.inbox = queue.Queue()
         self.usage_total = {"input": 0, "output": 0, "total": 0}
@@ -102,11 +106,12 @@ class LLMPlayer:
         self.toolbox = None
         self._delta_parts = []
         self._delta_last = 0.0
+        self._cancelled = False
 
     # ------------------------------------------------------------------ turn
     def choose(self, game):
         self.turns += 1
-        self.toolbox = ToolBox(game, self.side)
+        self.toolbox = ToolBox(game, self.side, allowed=self.enabled_tools)
         block = []
         self._drain_inbox(block)
         block.append({"role": "user", "content": self._turn_prompt(game)})
@@ -117,16 +122,31 @@ class LLMPlayer:
         last_text = ""
         system = SYSTEM_PROMPT.format(color=side_zh(self.side))
 
-        for step in range(self.max_steps):
-            self.emit({"type": "llm_step", "side": self.side, "step": step + 1})
+        step = 0
+        while True:
+            if self._cancelled:
+                return self._abort(last_text, error="cancelled")
+            step += 1
+            if self.max_steps and step > self.max_steps:
+                self.emit(
+                    {
+                        "type": "error",
+                        "side": self.side,
+                        "text": "本回合达到 %d 步上限" % self.max_steps,
+                    }
+                )
+                return self._abort(last_text, error="step limit")
+            self.emit({"type": "llm_step", "side": self.side, "step": step})
             chat_kwargs = {"tools": tool_specs()}
             if getattr(self.client, "supports_streaming", False):
                 chat_kwargs["on_delta"] = self._on_delta
             try:
                 result = self.client.chat(system, messages, **chat_kwargs)
-            except LLMError as exc:
+            except Exception as exc:  # noqa: BLE001 - cancelled or transport
                 self.emit({"type": "error", "side": self.side, "text": str(exc)})
-                return self._fallback(game, last_text, error=str(exc))
+                return self._abort(last_text, error=str(exc))
+            if result is None:
+                return self._abort(last_text, error="cancelled")
             self._flush_delta()
             self._merge_usage(result.usage)
             if result.reasoning:
@@ -198,25 +218,23 @@ class LLMPlayer:
                         piece_id=piece_id,
                         to=to,
                         comment=last_text,
-                        steps=step + 1,
+                        steps=step,
                     )
+                if call.name == "note" and outcome.get("ok"):
+                    text = str((call.arguments or {}).get("text", "")).strip()
+                    if text:
+                        self.notes.append(text[:120])
+                        self.notes = self.notes[-10:]
                 if call.name == "resign" and outcome.get("ok"):
                     return self._decision(
                         resign=True,
                         resign_reason=self.toolbox.resign_reason or "认输",
                         comment=last_text or "认输",
-                        steps=step + 1,
+                        steps=step,
                     )
             messages = self._messages()
 
-        self.emit(
-            {
-                "type": "error",
-                "side": self.side,
-                "text": "AI 在 %d 步内没有给出合法着法" % self.max_steps,
-            }
-        )
-        return self._fallback(game, last_text, error="no move within step limit")
+        return self._abort(last_text, error="no move")
 
     # -------------------------------------------------------------- helpers
     def _on_delta(self, kind, text):
@@ -247,6 +265,40 @@ class LLMPlayer:
             )
         self._delta_parts = []
         self._delta_last = time.time()
+
+    def cancel(self):
+        self._cancelled = True
+        cancel = getattr(self.client, "cancel", None)
+        if cancel is not None:
+            try:
+                cancel()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _chat(self, system, messages, tools):
+        box = {}
+        kwargs = {"tools": tools}
+        if getattr(self.client, "supports_streaming", False):
+            kwargs["on_delta"] = self._on_delta
+
+        def run():
+            try:
+                box["result"] = self.client.chat(system, messages, **kwargs)
+            except Exception as exc:  # noqa: BLE001
+                box["error"] = exc
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while worker.is_alive():
+            if self._cancelled:
+                self.cancel()
+                return None
+            worker.join(0.1)
+        if self._cancelled:
+            return None
+        if "error" in box:
+            raise box["error"]
+        return box.get("result")
 
     def _messages(self):
         return [message for block in self.blocks for message in block]
@@ -289,7 +341,10 @@ class LLMPlayer:
             "上一步：%s" % last_text,
             "最近着法：%s" % (recent_text or "暂无"),
             "子力：红 %d，黑 %d" % (material[RED], material[BLACK]),
-            "",
+        ]
+        if self.notes:
+            lines.append("你的备忘：" + "；".join(self.notes[-6:]))
+        lines += [
             "当前棋盘（大写=红方，小写=黑方）：",
             game.ascii(),
             "",
@@ -313,73 +368,17 @@ class LLMPlayer:
     def _decision(self, **kwargs):
         kwargs.setdefault("messages", list(self.toolbox.outbox))
         kwargs.setdefault("usage", dict(self.usage_total))
+        kwargs.setdefault("draw_offer", self.toolbox.draw_offer)
         return AgentDecision(**kwargs)
 
-    def _fallback(self, game, text, error=""):
-        if self.fallback == "forfeit":
-            return self._decision(
-                resign=True, comment=text, error=error, fallback=True
-            )
-        moves = game.legal_moves()
-        if not moves:
-            return self._decision(resign=True, comment=text, error=error, fallback=True)
-        move = self.rng.choice(moves)
-        self.emit(
-            {
-                "type": "error",
-                "side": self.side,
-                "text": "AI 未能给出着法，随机走一步 %s" % move.to_str,
-            }
-        )
+    def _abort(self, text, error=""):
         return self._decision(
-            piece_id=move.piece_id,
-            to=move.to_str,
-            comment=text,
+            resign=True,
+            comment=text or error,
+            resign_reason=error or "模型未能给出着法",
             error=error,
-            fallback=True,
         )
 
-
-    def farewell(self, game):
-        """One short closing line after the game, sent through chat."""
-        if game.status != "finished":
-            return ""
-        result = game.result or {}
-        winner = result.get("winner")
-        if winner == self.side:
-            outcome = "你赢了"
-        elif winner:
-            outcome = "你输了"
-        else:
-            outcome = "和棋"
-        prompt = (
-            "对局结束：%s（%s）。请用一句中文（不超过 40 字）向对手说句话，"
-            "不要调用工具，直接输出这句话。"
-            % (outcome, result.get("reason", ""))
-        )
-        try:
-            reply = self.client.chat(
-                "你是一名中国象棋棋手。",
-                [{"role": "user", "content": prompt}],
-            )
-        except Exception:  # noqa: BLE001 - farewell is optional
-            return ""
-        return (reply.text or "").strip()[:120]
-
-    def reset_for_new_game(self, side=None):
-        """Keep the conversation memory, start a fresh game."""
-        self.usage_total = {"input": 0, "output": 0, "total": 0}
-        self.turns = 0
-        self.toolbox = None
-        while True:
-            try:
-                self.inbox.get_nowait()
-            except queue.Empty:
-                break
-        note = "上一局已经结束，现在开始新的一盘，你仍然执%s方。" % side_zh(self.side)
-        self.blocks.append([{"role": "user", "content": note}])
-        while len(self.blocks) > self.max_blocks:
-            self.blocks.pop(0)
 
 class EnginePlayer:
     """本地 alpha-beta 引擎棋手，无需 API。"""
@@ -402,6 +401,9 @@ class EnginePlayer:
                 self.inbox.get_nowait()
             except queue.Empty:
                 break
+
+    def cancel(self):
+        self._cancelled = True
 
     def farewell(self, game):
         return ""

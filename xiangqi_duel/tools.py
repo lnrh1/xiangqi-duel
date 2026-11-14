@@ -24,9 +24,9 @@ MAX_MESSAGES_PER_GAME = 6
 MAX_MESSAGE_CHARS = 80
 
 
-def tool_specs():
+def tool_specs(allowed=None):
     """OpenAI 风格的 function 定义列表。"""
-    return [
+    specs = [
         {
             "type": "function",
             "function": {
@@ -178,6 +178,44 @@ def tool_specs():
         {
             "type": "function",
             "function": {
+                "name": "offer_draw",
+                "description": (
+                    "向对手提议和棋，note 会显示在对局界面上。如果对手也调用 "
+                    "offer_draw，双方同意，立即和棋。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "note": {
+                            "type": "string",
+                            "description": "附言，例如“局面均势，和棋吧”。",
+                        }
+                    },
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "note",
+                "description": (
+                    "给自己记一条备忘，不发给对手；后续回合会出现在你的提示里。"
+                    "适合记录计划、要防守的点或对手的习惯。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "备忘内容，40 字以内。"}
+                    },
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "resign",
                 "description": "认输。只在局面已经无望时使用。",
                 "parameters": {
@@ -237,6 +275,10 @@ def tool_specs():
             },
         },
     ]
+    specs = [s for s in specs if s["function"]["name"] != "get_board"]
+    if allowed:
+        specs = [s for s in specs if s["function"]["name"] in allowed]
+    return specs
 
 
 TOOL_NAMES = [spec["function"]["name"] for spec in tool_specs()]
@@ -249,16 +291,21 @@ class ToolBox:
     以便记录历史、留言和计时。
     """
 
-    def __init__(self, game, side):
+    def __init__(self, game, side, allowed=None):
         self.game = game
         self.side = side
         self.pending = None
         self.outbox = []
         self.messages_sent = 0
         self.resign_reason = ""
+        self.draw_offer = None
+        self.notes = []
+        self.allowed = set(allowed) if allowed else None
 
     # ------------------------------------------------------------- dispatch
     def call(self, name, arguments=None):
+        if self.allowed is not None and name not in self.allowed and name != "move":
+            return {"ok": False, "error": "工具 %s 已被对局设置禁用" % (name,)}
         if isinstance(arguments, str):
             text = arguments.strip()
             if not text:
@@ -322,23 +369,6 @@ class ToolBox:
         }
 
     # ---------------------------------------------------------------- tools
-    def _t_get_board(self):
-        game = self.game
-        legal = game.legal_moves()
-        last = game.history[-1].to_dict() if game.history else None
-        return {
-            "ok": True,
-            "board": game.ascii(),
-            "fen": game.board.to_fen(game.turn, game.halfmove_clock, game.fullmove),
-            "turn": game.turn,
-            "your_color": self.side,
-            "check": game.in_check(),
-            "status": game.status,
-            "legal_move_count": len(legal),
-            "last_move": last,
-            "material": game.material(),
-        }
-
     def _t_list_pieces(self, color="both"):
         color = str(color).lower()
         if color not in ("both", "red", "black"):
@@ -547,6 +577,23 @@ class ToolBox:
             last = 8
         moves = [m.to_dict() for m in self.game.history[-last:]]
         return {"ok": True, "moves": moves, "count": len(moves)}
+
+    def _t_offer_draw(self, note=""):
+        note = str(note or "").strip()[:80]
+        self.draw_offer = note or "和棋"
+        return {
+            "ok": True,
+            "note": note,
+            "message": "已向对手提议和棋，等对手回应。",
+        }
+
+    def _t_note(self, text=""):
+        text = str(text or "").strip()[:120]
+        if not text:
+            return {"ok": False, "error": "备忘不能为空"}
+        self.notes.append(text)
+        self.notes = self.notes[-10:]
+        return {"ok": True, "notes": list(self.notes)}
 
     def _t_resign(self, reason=""):
         if self.game.status != "playing":

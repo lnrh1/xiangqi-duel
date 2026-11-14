@@ -84,7 +84,7 @@ class PlayerSpec:
             "has_api_key": bool(self.api_key),
         }
 
-    def make_player(self, side, emit, seed=0):
+    def make_player(self, side, emit, seed=0, enabled_tools=None):
         if self.kind == "engine":
             return EnginePlayer(
                 side,
@@ -110,7 +110,9 @@ class PlayerSpec:
                 % (self.provider, " / ".join(preset.get("env", ())) or "（该提供商无需 Key）")
             )
         client = make_client(config)
-        return LLMPlayer(side, client, config, emit=emit, seed=seed)
+        return LLMPlayer(
+            side, client, config, emit=emit, seed=seed, enabled_tools=enabled_tools
+        )
 
 
 class Match:
@@ -126,12 +128,15 @@ class Match:
         seed=1,
         game_id=None,
         players=None,
+        enabled_tools=None,
     ):
         self.id = game_id or uuid.uuid4().hex[:10]
         self.red_spec = red_spec
         self.black_spec = black_spec
         self.human_side = human_side
         self.mode = "human" if human_side else "aivai"
+        self.enabled_tools = list(enabled_tools) if enabled_tools else None
+        self.pending_draw = None
         self.max_plies = max_plies
         self.game = Game(fen=fen, max_plies=max_plies)
         self.seed = seed
@@ -156,7 +161,10 @@ class Match:
                 self.players[color] = players[color]
             else:
                 self.players[color] = specs[color].make_player(
-                    color, self._agent_event, seed=seed + (1 if color == BLACK else 0)
+                    color,
+                    self._agent_event,
+                    seed=seed + (1 if color == BLACK else 0),
+                    enabled_tools=self.enabled_tools,
                 )
 
     # ------------------------------------------------------------- event bus
@@ -234,8 +242,15 @@ class Match:
     def stop(self, reason="对局被终止"):
         self.stop_event.set()
         self.human_queue.put(None)
+        for player in list(self.players.values()):
+            cancel = getattr(player, "cancel", None)
+            if cancel is not None:
+                try:
+                    cancel()
+                except Exception:  # noqa: BLE001
+                    pass
         if self.thread is not None and self.thread.is_alive():
-            self.thread.join(timeout=10)
+            self.thread.join(timeout=2)
         with self.lock:
             if self.game.status == "playing":
                 self.game.abort(reason)
@@ -280,6 +295,8 @@ class Match:
                     try:
                         decision = player.choose(view)
                     except Exception as exc:  # noqa: BLE001 - keep the match alive
+                        if self.stop_event.is_set():
+                            break
                         self._error("AI 异常：%s" % exc)
                         self.game.resign(side, "AI 异常")
                         break
@@ -287,9 +304,38 @@ class Match:
                     with self.lock:
                         for key in ("input", "output", "total"):
                             self.usage[side][key] += decision.usage.get(key, 0)
+                    if self.stop_event.is_set():
+                        break
                     with self.lock:
                         if self.game.status != "playing":
                             break
+                    if decision.draw_offer is not None:
+                        note = decision.draw_offer
+                        with self.lock:
+                            self.chat.append(
+                                {
+                                    "side": side,
+                                    "text": "提议和棋" + ("：" + note if note else ""),
+                                    "at": time.time(),
+                                    "ply": len(self.game.history) + 1,
+                                }
+                            )
+                        opponent = other(side)
+                        if opponent in self.players:
+                            self.players[opponent].inbox.put(
+                                {
+                                    "from": "opponent",
+                                    "text": "对手提议和棋"
+                                    + ("（%s）" % note if note else "")
+                                    + "；如果你同意，请调用 offer_draw。",
+                                }
+                            )
+                        if self.pending_draw and self.pending_draw[0] != side:
+                            self.game.declare_draw("双方同意和棋")
+                            break
+                        self.pending_draw = (side, note)
+                        self._broadcast({"type": "state", "snapshot": self.snapshot()})
+
                     if decision.resign:
                         self.game.resign(
                             side,

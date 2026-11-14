@@ -5,7 +5,7 @@
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 
-一个完整的中国象棋 AI 对弈软件：内置规则引擎、稳定的棋子编码、11 个 LLM 工具、
+一个完整的中国象棋 AI 对弈软件：内置规则引擎、稳定的棋子编码、12 个 LLM 工具、
 可自由切换提供商的模型库，以及一个实时观战网页。
 
 红黑双方各自维护独立上下文，用中文思考、记谱和发言。AI 对 AI 时你能看到每一步的
@@ -18,10 +18,11 @@
 
 ## 特性
 
+- **首页与模式**：主页 → 选模式（我对战 AI / AI 对战 AI）→ 两侧点选模型 → 开局；设置页管理模型库与工具开关
 - **两种模式**：双 AI 观战（透明展示思考 / 工具调用 / 留言）与人机对弈（隐藏 AI 内部过程）
 - **选手与模型解耦**：模型统一登记在本地模型库（填 base_url + Key 后可一键「获取模型」列表，点选填入），开局时给红黑各挑一个
 - **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 这类编号全局唯一，走子后不变
-- **工具接口**：`list_legal_moves(red_horse_1)`、坐标范围查询、格子查询、留言等 11 个工具
+- **工具接口**：`list_legal_moves(red_horse_1)`、坐标范围查询、格子查询、留言、和棋提议等 12 个工具，可在设置里逐个开关（move 必选）
 - **独立上下文**：每个 AI 只有自己的对话历史，互相不污染
 - **中文提示词**：默认中文思考和记谱，避免输出跑成英文
 - **AI 留言**：`send_message` 让双方互相喊话；人机模式里你也可以在输入框发言
@@ -146,7 +147,6 @@ xiangqi-duel models add --provider custom --model my-model --base-url https://ap
 
 | 工具 | 作用 | 示例参数 |
 |---|---|---|
-| `get_board` | 棋盘、FEN、轮次、将军、合法着法数 | `{}` |
 | `list_pieces` | 列出棋子（编号、x/y、格子名） | `{"color": "red"}` |
 | `list_pieces_in_area` | 按 x/y 范围列出棋子 | `{"x_min": 0, "x_max": 2, "y_min": 0, "y_max": 4}` |
 | `get_piece` | 单枚棋子的坐标与可走点 | `{"piece_id": "red_horse_1"}` |
@@ -156,6 +156,8 @@ xiangqi-duel models add --provider custom --model my-model --base-url https://ap
 | `get_status` | 轮次、结果、重复局面次数、子力 | `{}` |
 | `get_history` | 最近的着法与留言 | `{"last": 8}` |
 | `send_message` | 给对手留言（每局 6 条，每条 80 字） | `{"text": "承让"}` |
+| `offer_draw` | 提议和棋，附一句 note；对手也提议即双方同意 | `{"note": "局面均势"}` |
+| `note` | 给自己记备忘，后续回合出现在提示里 | `{"text": "防他马八进七"}` |
 | `resign` | 认输 | `{"reason": "无路可走"}` |
 
 坐标：file `a-i` 是列，rank `0-9` 是行；`a0` 是红方左下角，`y=0` 是红方底线。
@@ -233,7 +235,7 @@ xiangqi_duel/
   moves.py        走子生成、攻击判定、perft
   notation.py     中文记谱
   game.py         对局状态、判负与判和
-  tools.py        11 个 LLM 工具的定义与执行
+  tools.py        12 个 LLM 工具的定义与执行
   llm.py          OpenAI 兼容 / Anthropic 客户端
   agent.py        LLM 棋手（独立上下文）与本地引擎棋手
   arena.py        对局编排、事件流、留言
@@ -252,7 +254,7 @@ examples/         示例对局与离线回放
 python3 -m unittest discover -s tests -v
 ```
 
-覆盖规则与 perft、记谱、工具、引擎、代理循环（含非法着法重试与兜底）、
+覆盖规则与 perft、记谱、工具、引擎、代理循环（含非法着法重试与立即停止）、
 模型库、对局编排与 HTTP 接口。
 
 CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)：复制到 `.github/workflows/ci.yml` 即可启用

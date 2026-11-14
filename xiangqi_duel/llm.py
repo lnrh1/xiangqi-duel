@@ -4,12 +4,39 @@ from __future__ import annotations
 import json
 import os
 import socket
+import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
 RETRY_STATUS = (408, 409, 425, 429, 500, 502, 503, 504)
+
+_ACTIVE_LOCK = threading.Lock()
+_ACTIVE_RESPONSES = []
+
+
+def _register_response(response):
+    with _ACTIVE_LOCK:
+        _ACTIVE_RESPONSES.append(response)
+
+
+def _unregister_response(response):
+    with _ACTIVE_LOCK:
+        if response in _ACTIVE_RESPONSES:
+            _ACTIVE_RESPONSES.remove(response)
+
+
+def cancel_all():
+    """Close every in-flight HTTP response so a blocked request unwinds."""
+    with _ACTIVE_LOCK:
+        responses = list(_ACTIVE_RESPONSES)
+        _ACTIVE_RESPONSES.clear()
+    for response in responses:
+        try:
+            response.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class LLMError(RuntimeError):
@@ -171,7 +198,11 @@ def _request_json(url, payload, headers, timeout, attempts=3):
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read().decode("utf-8", "replace")
+                _register_response(response)
+                try:
+                    raw = response.read().decode("utf-8", "replace")
+                finally:
+                    _unregister_response(response)
                 return json.loads(raw)
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:600]
@@ -202,20 +233,24 @@ def _stream_events(url, payload, headers, timeout, on_event, attempts=2):
         request = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                for raw in response:
-                    line = raw.decode("utf-8", "replace").strip()
-                    if not line or line.startswith(":"):
-                        continue
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        return
-                    try:
-                        event = json.loads(data)
-                    except ValueError:
-                        continue
-                    on_event(event)
+                _register_response(response)
+                try:
+                    for raw in response:
+                        line = raw.decode("utf-8", "replace").strip()
+                        if not line or line.startswith(":"):
+                            continue
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if data == "[DONE]":
+                            return
+                        try:
+                            event = json.loads(data)
+                        except ValueError:
+                            continue
+                        on_event(event)
+                finally:
+                    _unregister_response(response)
                 return
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", "replace")[:500]
@@ -247,6 +282,9 @@ class OpenAIClient:
         self.config = config
         self.base_url = (config.base_url or "").rstrip("/")
         self.environment = PRESETS.get(config.provider, {}).get("env", ())
+
+    def cancel(self):
+        cancel_all()
 
     def _headers(self):
         headers = {"Content-Type": "application/json"}
@@ -371,6 +409,9 @@ class AnthropicClient:
     def __init__(self, config):
         self.config = config
         self.base_url = (config.base_url or "https://api.anthropic.com").rstrip("/")
+
+    def cancel(self):
+        cancel_all()
 
     def _headers(self):
         headers = {

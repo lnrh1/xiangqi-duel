@@ -90,19 +90,12 @@ class LLMPlayerTest(unittest.TestCase):
         decision = player.choose(Game())
         self.assertEqual(decision.messages, ["承让了"])
 
-    def test_fallback_random(self):
+    def test_no_move_aborts(self):
         client = FakeClient([ChatResult(text="嗯…"), ChatResult(text="嗯…")])
         player = LLMPlayer("red", client, config(), max_steps=2)
         decision = player.choose(Game())
-        self.assertTrue(decision.fallback)
-        self.assertTrue(decision.piece_id)
-        self.assertEqual(len({(decision.piece_id, decision.to)}), 1)
-
-    def test_fallback_forfeit(self):
-        client = FakeClient([ChatResult(text="认输") for _ in range(4)])
-        player = LLMPlayer("red", client, config(), max_steps=2, fallback="forfeit")
-        decision = player.choose(Game())
         self.assertTrue(decision.resign)
+        self.assertIn("step limit", decision.resign_reason)
 
     def test_context_persists_between_turns(self):
         client = FakeClient(
@@ -142,7 +135,8 @@ class LLMPlayerTest(unittest.TestCase):
         red = LLMPlayer("red", client_red, config())
         black = LLMPlayer("black", client_black, config())
         game = Game()
-        red.choose(game)
+        first = red.choose(game)
+        game.play(first.piece_id, first.to)
         black.choose(game)
         red_text = " ".join(m.get("content") or "" for m in client_red.calls[0]["messages"])
         black_text = " ".join(m.get("content") or "" for m in client_black.calls[0]["messages"])

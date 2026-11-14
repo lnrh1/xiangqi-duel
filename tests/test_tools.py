@@ -9,8 +9,9 @@ class ToolSpecTest(unittest.TestCase):
     def test_names(self):
         names = [spec["function"]["name"] for spec in tool_specs()]
         for name in (
-            "get_board", "list_pieces", "get_piece", "list_legal_moves",
-            "move", "get_status", "get_history", "send_message", "resign",
+            "list_pieces", "get_piece", "list_legal_moves", "move", "get_status",
+            "get_history", "send_message", "offer_draw", "note", "resign",
+            "list_pieces_in_area", "describe_square",
         ):
             self.assertIn(name, names)
 
@@ -19,13 +20,6 @@ class ToolBoxTest(unittest.TestCase):
     def setUp(self):
         self.game = Game()
         self.box = ToolBox(self.game, "red")
-
-    def test_get_board(self):
-        result = self.box.call("get_board")
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["turn"], "red")
-        self.assertEqual(result["legal_move_count"], 44)
-        self.assertIn("board", result)
 
     def test_list_legal_moves_for_piece(self):
         result = self.box.call("list_legal_moves", {"piece_id": "red_horse_1"})
