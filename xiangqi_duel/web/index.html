@@ -558,6 +558,26 @@
   .side-art.flip img { transform: scaleX(-1); }
 
   .lobby-actions { display: flex; gap: 14px; align-items: center; }
+  .sim-box {
+    width: min(520px, 94vw); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 20px; padding: 16px;
+  }
+  .sim-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .sim-head strong { font-size: 16px; }
+  .sim-head .hint { margin-right: auto; }
+  .sim-board {
+    position: relative; width: min(400px, 76vw); aspect-ratio: 8 / 9;
+    margin: 10px auto; background: linear-gradient(150deg, #f0d6a4, #e2c084 60%, #d9b476);
+    border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(120, 80, 30, .35);
+  }
+  #sim-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #sim-svg line { stroke: var(--board-line); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+  #sim-svg line.edge { stroke-width: 2.2; }
+  #sim-svg text { fill: rgba(120, 84, 40, .8); font-size: .42px; font-weight: 700; text-anchor: middle; }
+  .sim-board .piece { font-size: calc(var(--glyph) * .62); cursor: default; }
+  .sim-board .marker { cursor: pointer; }
+  .sim-actions { display: flex; gap: 8px; }
+  .sim-actions.hidden { display: none; }
   .picker-box { width: min(560px, 100%); }
   .picker-list {
     display: flex; flex-direction: column; gap: 8px;
@@ -656,6 +676,9 @@
     <aside class="side-panel" id="side-panel">
       <button class="btn drawer-close" id="drawer-close">收起</button>
       <div class="players" id="players"></div>
+      <div class="sim-actions hidden" id="sim-actions">
+        <button class="btn" id="btn-sim">推演棋盘（≤8 步）</button>
+      </div>
       <div class="tabs">
         <button class="tab active" data-tab="moves">棋谱</button>
         <button class="tab" data-tab="chat">对话</button>
@@ -753,6 +776,24 @@
   </div>
   <div class="lobby-actions">
     <button class="btn primary big" id="lobby-start" disabled>开始对局</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="sim-overlay">
+  <div class="sim-box">
+    <div class="sim-head">
+      <strong id="sim-title">推演棋盘</strong>
+      <span class="hint" id="sim-count"></span>
+      <button class="btn ghost" id="sim-exit">退出推演</button>
+    </div>
+    <div class="sim-board">
+      <div class="grid">
+        <svg id="sim-svg" viewBox="0 0 8 9" preserveAspectRatio="none"></svg>
+        <div class="pieces" id="sim-pieces"></div>
+        <div class="markers" id="sim-markers"></div>
+      </div>
+    </div>
+    <p class="hint">推演不影响真实对局，最多 8 步；双方棋子都可以走。推演较多会明显拖长对局时间。</p>
   </div>
 </div>
 
@@ -859,7 +900,9 @@
     movesSignature: "",
     lastTurn: null,
     settingsFromHome: false,
-    artEnabled: true
+    artEnabled: true,
+    sim: null,
+    simSelected: null
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -968,6 +1011,23 @@
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-rematch').classList.toggle('hidden', !finished);
     var spectate = snap.mode !== 'human';
+    $('sim-actions').classList.toggle('hidden', spectate || snap.status !== 'playing');
+    var sims = snap.sims || {};
+    var simSide = null;
+    var simHuman = false;
+    if (snap.mode === 'human') {
+      simSide = snap.human_side;
+      simHuman = true;
+    } else if (sims.red) {
+      simSide = 'red';
+    } else if (sims.black) {
+      simSide = 'black';
+    }
+    if (simSide && sims[simSide]) {
+      showSim(sims[simSide], simSide, simHuman, false);
+    } else if (state.sim) {
+      hideSim();
+    }
     $('layout').classList.remove('replay');
     $('layout').classList.toggle('spectate', spectate);
     $('layout').classList.toggle('human', !spectate);
@@ -1589,6 +1649,7 @@
       if (data.type === 'state' && data.snapshot) { applySnapshot(data.snapshot); }
       else if (data.type === 'trace' && data.entry) { addTrace(data.entry); }
       else if (data.type === 'thinking_delta') { applyThinkingDelta(data); }
+      else if (data.type === 'sim') { onSimEvent(data); }
       else if (data.type === 'end' && data.snapshot) { applySnapshot(data.snapshot); }
     };
   }
@@ -2624,6 +2685,71 @@
     loadTools();
   }
 
+  function renderSimBoard() {
+    var sim = state.sim;
+    if (!sim || !sim.snapshot) { return; }
+    var snap = sim.snapshot;
+    $('sim-title').textContent = sim.human ? '我的推演' : (snap.turn === 'red' ? '红方推演' : '黑方推演');
+    $('sim-count').textContent = (snap.plies || 0) + ' / ' + (snap.limit || 8) + ' 步';
+    if (!$('sim-svg').innerHTML) { $('sim-svg').innerHTML = $('board-svg').innerHTML; }
+    var html = '';
+    (snap.pieces || []).forEach(function (piece) {
+      html += '<div class="piece ' + piece.color + '" data-id="' + esc(piece.id) + '" data-square="' + esc(piece.square) +
+        '" style="left:' + leftFor(piece.x) + '%;top:' + topFor(piece.y) + '%"><span>' + esc(piece.glyph || '') + '</span></div>';
+    });
+    $('sim-pieces').innerHTML = html;
+    var markers = '';
+    if (sim.human && state.simSelected) {
+      ((snap.legal || {})[state.simSelected] || []).forEach(function (name) {
+        var x = 'abcdefghi'.indexOf(name.charAt(0));
+        var y = parseInt(name.slice(1), 10);
+        markers += '<div class="marker" data-square="' + name + '" style="left:' + leftFor(x) + '%;top:' + topFor(y) + '%"></div>';
+      });
+    }
+    $('sim-markers').innerHTML = markers;
+    $('sim-exit').classList.toggle('hidden', !sim.human);
+    $('sim-overlay').classList.remove('hidden');
+  }
+
+  function hideSim() {
+    state.sim = null;
+    state.simSelected = null;
+    $('sim-overlay').classList.add('hidden');
+    $('sim-pieces').innerHTML = '';
+    $('sim-markers').innerHTML = '';
+  }
+
+  function showSim(snapshot, side, human, ended) {
+    if (!snapshot) { hideSim(); return; }
+    state.sim = { snapshot: snapshot, side: side, human: human };
+    renderSimBoard();
+    if (ended) {
+      setTimeout(function () {
+        if (state.sim && state.sim.snapshot === snapshot) { hideSim(); }
+      }, 1500);
+    }
+  }
+
+  function onSimEvent(data) {
+    var snap = state.snapshot;
+    if (!snap) { return; }
+    if (snap.mode === 'aivai') {
+      showSim(data.snapshot, data.side, false, data.ended);
+    } else if (snap.mode === 'human' && data.side === snap.human_side) {
+      showSim(data.snapshot, data.side, true, data.ended);
+    }
+  }
+
+  async function simMove(pieceId, to) {
+    try {
+      var data = await api('/api/sim/move', { method: 'POST', body: { piece_id: pieceId, to: to } });
+      state.simSelected = null;
+      showSim(data.snapshot, state.snapshot.human_side, true, data.ended);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
   // --------------------------------------------------------------------- init
   function bindEvents() {
     $('btn-rematch').addEventListener('click', async function () {
@@ -2642,6 +2768,41 @@
       } catch (err) {
         toast(err.message);
       }
+    });
+    $('btn-sim').addEventListener('click', async function () {
+      try {
+        var data = await api('/api/sim/start', { method: 'POST', body: {} });
+        state.simSelected = null;
+        showSim(data.snapshot, state.snapshot.human_side, true, false);
+      } catch (err) {
+        toast(err.message);
+      }
+    });
+    $('sim-exit').addEventListener('click', async function () {
+      if (state.sim && state.sim.human) {
+        try { await api('/api/sim/end', { method: 'POST', body: {} }); } catch (err) {}
+      }
+      hideSim();
+    });
+    $('sim-pieces').addEventListener('click', function (event) {
+      if (!state.sim || !state.sim.human) { return; }
+      var el = event.target.closest('.piece');
+      if (!el) { return; }
+      var snap = state.sim.snapshot;
+      var pieceId = el.getAttribute('data-id');
+      var square = el.getAttribute('data-square');
+      if (state.simSelected) {
+        var legal = (snap.legal || {})[state.simSelected] || [];
+        if (legal.indexOf(square) !== -1) { simMove(state.simSelected, square); return; }
+      }
+      var targets = (snap.legal || {})[pieceId] || [];
+      state.simSelected = targets.length ? pieceId : null;
+      renderSimBoard();
+    });
+    $('sim-markers').addEventListener('click', function (event) {
+      var marker = event.target.closest('.marker');
+      if (!marker || !state.sim || !state.sim.human || !state.simSelected) { return; }
+      simMove(state.simSelected, marker.getAttribute('data-square'));
     });
     $('btn-drawer').addEventListener('click', function () {
       $('side-panel').classList.toggle('open');

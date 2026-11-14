@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from .agent import AgentDecision, EnginePlayer, LLMPlayer
 from .game import Game, IllegalMove
+from .simulation import Simulation
 from .llm import LLMError, PRESETS, ProviderConfig, make_client
 from .moves import other
 from .pieces import BLACK, COLOR_ZH, RED
@@ -137,6 +138,7 @@ class Match:
         self.mode = "human" if human_side else "aivai"
         self.enabled_tools = list(enabled_tools) if enabled_tools else None
         self.pending_draw = None
+        self.human_sim = None
         self.max_plies = max_plies
         self.game = Game(fen=fen, max_plies=max_plies)
         self.seed = seed
@@ -196,6 +198,16 @@ class Match:
         if event.get("type") == "thinking_delta":
             if self.mode == "aivai":
                 self._broadcast(event)
+            return
+        if event.get("type") == "sim":
+            if self.mode == "aivai" or event.get("side") == self.human_side:
+                self._broadcast(
+                    {
+                        "type": "sim",
+                        "side": event.get("side"),
+                        "snapshot": event.get("snapshot"),
+                    }
+                )
             return
         if event.get("type") in TRACE_TYPES:
             entry = self._record_trace(event)
@@ -288,6 +300,12 @@ class Match:
                     try:
                         with self.lock:
                             self.game.play(item[0], item[1])
+                            had_sim = self.human_sim is not None
+                            self.human_sim = None
+                        if had_sim:
+                            self._broadcast(
+                                {"type": "sim", "side": self.human_side, "snapshot": None}
+                            )
                     except IllegalMove as exc:
                         self._error(str(exc))
                         self.game.resign(side, "非法着法")
@@ -483,6 +501,56 @@ class Match:
                 player.inbox.put({"from": "human", "text": text})
         self._broadcast({"type": "state", "snapshot": self.snapshot()})
 
+    def _sims_locked(self):
+        sims = {}
+        if self.mode == "aivai":
+            for color in (RED, BLACK):
+                sim = getattr(self.players.get(color), "sim", None)
+                if sim is not None:
+                    sims[color] = sim.snapshot()
+        elif self.human_sim is not None:
+            sims[self.human_side] = self.human_sim.snapshot()
+        return sims
+
+    def start_human_sim(self):
+        if self.mode != "human":
+            raise ValueError("只有人机模式可以使用推演棋盘")
+        if self.game.status != "playing":
+            raise ValueError("对局已结束")
+        if self.human_sim is None:
+            self.human_sim = Simulation(self.game)
+        snapshot = self.human_sim.snapshot()
+        self._broadcast({"type": "sim", "side": self.human_side, "snapshot": snapshot})
+        return snapshot
+
+    def human_sim_move(self, piece_id, to):
+        if self.mode != "human" or self.human_sim is None:
+            raise ValueError("当前没有推演棋盘")
+        record, ended = self.human_sim.move(piece_id, to)
+        snapshot = self.human_sim.snapshot()
+        if ended:
+            self.human_sim = None
+        self._broadcast(
+            {
+                "type": "sim",
+                "side": self.human_side,
+                "snapshot": snapshot,
+                "ended": ended,
+            }
+        )
+        return {
+            "ok": True,
+            "snapshot": snapshot,
+            "ended": ended,
+            "plies": snapshot["plies"],
+            "limit": snapshot["limit"],
+            "notation": record.notation,
+        }
+
+    def end_human_sim(self):
+        self.human_sim = None
+        self._broadcast({"type": "sim", "side": self.human_side, "snapshot": None})
+
     # -------------------------------------------------------------- snapshots
     def snapshot(self):
         with self.lock:
@@ -502,6 +570,7 @@ class Match:
                     "trace_hidden": self.mode == "human",
                     "usage": self.usage,
                     "errors": self.errors[-5:],
+                    "sims": self._sims_locked(),
                     "started_at": self.started_at,
                 }
             )

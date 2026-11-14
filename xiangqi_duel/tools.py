@@ -13,12 +13,23 @@ from .game import IllegalMove
 from .moves import in_check, is_attacked, other
 from .notation import move_text
 from .pieces import COLOR_ZH, normalize_piece_id
+from .simulation import Simulation
 
 PIECE_ID_HELP = (
     "棋子编号在对局中保持不变，例如 red_horse_1、black_advisor_2、"
     "red_general。格子写作 h2：a-i 为纵线，0-9 为横线，a0 是红方左下角，"
     "i9 是黑方右上角。"
 )
+
+SIM_TOOLS = {
+    "list_pieces",
+    "get_piece",
+    "list_legal_moves",
+    "get_status",
+    "get_history",
+    "list_pieces_in_area",
+    "describe_square",
+}
 
 MAX_MESSAGES_PER_GAME = 6
 MAX_MESSAGE_CHARS = 80
@@ -178,6 +189,26 @@ def tool_specs(allowed=None):
         {
             "type": "function",
             "function": {
+                "name": "start_simulation",
+                "description": (
+                    "进入推演棋盘：在虚拟棋盘上可以控制双方棋子试走，最多 8 步；"
+                    "推演中的 move / list_legal_moves 等自动作用于虚拟棋盘，不影响真实对局。"
+                    "注意：频繁推演会明显拖长一局的时间，只在关键局面使用。"
+                ),
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "end_simulation",
+                "description": "退出推演棋盘，回到真实对局。",
+                "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "offer_draw",
                 "description": (
                     "向对手提议和棋，note 会显示在对局界面上。如果对手也调用 "
@@ -291,9 +322,10 @@ class ToolBox:
     以便记录历史、留言和计时。
     """
 
-    def __init__(self, game, side, allowed=None):
+    def __init__(self, game, side, allowed=None, player=None):
         self.game = game
         self.side = side
+        self.player = player
         self.pending = None
         self.outbox = []
         self.messages_sent = 0
@@ -301,6 +333,10 @@ class ToolBox:
         self.draw_offer = None
         self.notes = []
         self.allowed = set(allowed) if allowed else None
+
+    @property
+    def sim(self):
+        return getattr(self.player, "sim", None) if self.player is not None else None
 
     # ------------------------------------------------------------- dispatch
     def call(self, name, arguments=None):
@@ -322,6 +358,22 @@ class ToolBox:
             arguments = {}
         if not isinstance(arguments, dict):
             return {"ok": False, "error": "arguments 必须是 JSON 对象"}
+        if name == "start_simulation":
+            return self._t_start_simulation()
+        if name == "end_simulation":
+            return self._t_end_simulation()
+        if self.sim is not None and name == "move":
+            return self._t_sim_move(arguments)
+        if self.sim is not None and name in SIM_TOOLS:
+            saved = self.game
+            self.game = self.sim.game
+            try:
+                return self._dispatch(name, arguments)
+            finally:
+                self.game = saved
+        return self._dispatch(name, arguments)
+
+    def _dispatch(self, name, arguments):
         handler = getattr(self, "_t_" + name, None)
         if handler is None:
             return {"ok": False, "error": "未知工具 %r" % (name,)}
@@ -388,62 +440,66 @@ class ToolBox:
 
     def _t_get_piece(self, piece_id):
         piece = self._require_own_piece(piece_id)
-        moves = self.game.legal_moves(piece.id)
+        moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
         return {
             "ok": True,
             "piece": self._piece_summary(piece),
             "legal_moves": [m.to_str for m in moves],
-            "move_details": [
-                {
-                    "to": m.to_str,
-                    "ucci": m.ucci,
-                    "notation": move_text(self.game.board, m, piece.color),
-                    "capture": m.capture_id,
-                }
-                for m in moves
-            ],
-            "in_check": self.game.in_check(),
+            "move_details": [self._move_detail(m, piece.color) for m in moves],
+            "in_check": in_check(self.game.board, self.game.turn),
+            "simulation": bool(self.sim),
+        }
+
+    def _move_detail(self, move, color):
+        board = self.game.board
+        captured = board.pieces.get(move.capture_id) if move.capture_id else None
+        preview = board.clone()
+        preview.make(move)
+        return {
+            "to": move.to_str,
+            "ucci": move.ucci,
+            "notation": move_text(board, move, color),
+            "capture": captured.id if captured else None,
+            "capture_name": captured.name_zh if captured else None,
+            "gives_check": bool(in_check(preview, other(color))),
         }
 
     def _t_list_legal_moves(self, piece_id=None):
         board = self.game.board
-        color = self.side
         if piece_id is not None:
             piece = self._require_own_piece(piece_id)
-            pieces = [piece]
+            color = piece.color if self.sim else self.side
+            moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
+            details = [self._move_detail(move, color) for move in moves]
+            return {
+                "ok": True,
+                "piece_id": piece.id,
+                "your_color": self.side,
+                "moves": {piece.id: details} if details else {},
+                "move_count": len(details),
+                "piece_count": 1 if details else 0,
+                "simulation": bool(self.sim),
+            }
+        if self.sim:
+            pieces = sorted(board.pieces.values(), key=lambda p: p.id)
         else:
-            pieces = sorted(board.side_pieces(color), key=lambda p: p.id)
-
+            pieces = sorted(board.side_pieces(self.side), key=lambda p: p.id)
         result = {}
         total = 0
         for piece in pieces:
-            moves = self.game.legal_moves(piece.id)
+            moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
             if not moves:
                 continue
-            if piece_id is not None:
-                details = []
-                for move in moves:
-                    captured = board.pieces.get(move.capture_id) if move.capture_id else None
-                    details.append(
-                        {
-                            "to": move.to_str,
-                            "ucci": move.ucci,
-                            "notation": move_text(board, move, color),
-                            "capture": captured.id if captured else None,
-                        }
-                    )
-                result[piece.id] = details
-                total += len(details)
-            else:
-                result[piece.id] = [move.to_str for move in moves]
-                total += len(moves)
+            result[piece.id] = [move.to_str for move in moves]
+            total += len(moves)
         return {
             "ok": True,
-            "piece_id": piece_id,
-            "your_color": color,
+            "piece_id": None,
+            "your_color": self.side,
             "moves": result,
             "move_count": total,
             "piece_count": len(result),
+            "simulation": bool(self.sim),
         }
 
     def _t_list_pieces_in_area(self, x_min=0, x_max=8, y_min=0, y_max=9, color="both"):
@@ -568,6 +624,8 @@ class ToolBox:
             "halfmove_clock": game.halfmove_clock,
             "repetitions": game.positions.get(key, 0),
             "material": game.material(),
+            "simulation": bool(self.sim),
+            "sim_plies": self.sim.plies if self.sim else 0,
         }
 
     def _t_get_history(self, last=8):
@@ -577,6 +635,71 @@ class ToolBox:
             last = 8
         moves = [m.to_dict() for m in self.game.history[-last:]]
         return {"ok": True, "moves": moves, "count": len(moves)}
+
+    def _t_start_simulation(self):
+        if self.game.status != "playing":
+            return {"ok": False, "error": "对局已结束，不能推演"}
+        if self.sim is not None:
+            return {"ok": False, "error": "已经在推演中，继续走子或调用 end_simulation"}
+        if self.player is None:
+            return {"ok": False, "error": "当前棋手不支持推演"}
+        self.player.sim = Simulation(self.game)
+        snapshot = self.player.sim.snapshot()
+        return {
+            "ok": True,
+            "simulation": True,
+            "plies": 0,
+            "limit": self.player.sim.limit,
+            "fen": snapshot["fen"],
+            "your_color": self.side,
+            "note": (
+                "已进入推演：move / list_legal_moves / get_status 等作用于虚拟棋盘，"
+                "不影响真实对局，最多 8 步后自动退出。推演较多会明显拖长对局时间。"
+            ),
+        }
+
+    def _t_end_simulation(self):
+        if self.sim is None:
+            return {"ok": False, "error": "当前没有推演"}
+        self.player.sim = None
+        return {"ok": True, "simulation": False, "note": "已退出推演，回到真实棋盘。"}
+
+    def _t_sim_move(self, arguments):
+        sim = self.sim
+        if sim is None:
+            return {"ok": False, "error": "当前没有推演"}
+        piece_id = arguments.get("piece_id")
+        to = arguments.get("to")
+        frm = arguments.get("from") or arguments.get("source")
+        if piece_id is None and frm:
+            piece = sim.game.board.piece_at(*parse_square(frm))
+            piece_id = piece.id if piece else None
+        if not piece_id:
+            return {"ok": False, "error": "缺少 piece_id（也可以用 from 指定起点）"}
+        if to is None:
+            return {"ok": False, "error": "缺少目标格 to"}
+        record, ended = sim.move(piece_id, to)
+        gives_check = in_check(sim.game.board, other(record.side))
+        detail = {
+            "ok": True,
+            "simulated": True,
+            "piece_id": record.piece_id,
+            "from": record.from_square,
+            "to": record.to_square,
+            "ucci": record.ucci,
+            "notation": record.notation,
+            "capture": record.capture,
+            "check": gives_check,
+            "plies": sim.plies,
+            "limit": sim.limit,
+            "ended": ended,
+        }
+        if ended:
+            self.player.sim = None
+            detail["note"] = "推演已达 8 步上限，已自动退出；请回到真实棋盘落子。"
+        else:
+            detail["note"] = "推演着法，不影响真实对局；可以继续走或调用 end_simulation。"
+        return detail
 
     def _t_offer_draw(self, note=""):
         note = str(note or "").strip()[:80]

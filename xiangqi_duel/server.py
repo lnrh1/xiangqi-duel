@@ -321,6 +321,33 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True})
             except IllegalMove as exc:
                 self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/sim/start":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                snapshot = match.start_human_sim()
+                self._json({"ok": True, "snapshot": snapshot})
+            except ValueError as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/sim/move":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                result = match.human_sim_move(
+                    body.get("piece_id", ""), body.get("to", "")
+                )
+                self._json(result)
+            except (IllegalMove, ValueError) as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path == "/api/sim/end":
+            match = self.state.current()
+            if match is not None:
+                match.end_human_sim()
+            self._json({"ok": True})
         elif path == "/api/say":
             match = self.state.current()
             if match is None:

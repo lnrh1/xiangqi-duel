@@ -137,7 +137,7 @@ class Game:
             piece_id, to, ", ".join(m.to_str for m in targets),
         )
 
-    def play(self, piece_id, to, *, comment="", thinking="", usage=None):
+    def play(self, piece_id, to, *, comment="", thinking="", usage=None, adjudicate=True):
         """Play a move by piece id and destination square."""
         if self.status != "playing":
             raise IllegalMove("the game is already over: %s" % (self.result,))
@@ -183,7 +183,8 @@ class Game:
         key = self.board.key(self.turn)
         self.position_log.append(key)
         self.positions[key] += 1
-        self._check_state()
+        if adjudicate:
+            self._check_state()
         return record
 
     def abort(self, reason="aborted"):

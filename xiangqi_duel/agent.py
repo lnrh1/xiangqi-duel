@@ -38,7 +38,8 @@ SYSTEM_PROMPT = """你是一名中国象棋高手，正在参加一场正式对�
 
 # 你的工具
 list_pieces、list_pieces_in_area、get_piece、describe_square、list_legal_moves、
-move、get_status、get_history、send_message、offer_draw、note、resign。
+move、get_status、get_history、send_message、offer_draw、note、resign、
+start_simulation、end_simulation。
 查坐标用 get_piece(棋子编号) 或 describe_square(格子)；
 按范围找子用 list_pieces_in_area(x_min, x_max, y_min, y_max)；想记计划用 note。
 
@@ -49,6 +50,9 @@ move、get_status、get_history、send_message、offer_draw、note、resign。
 4. 只有败局已定时才 resign。
 5. 思考可以自由展开，系统不限制步数和时间；但最终必须用 move 落子。
 6. 想提议和棋用 offer_draw（可附 note）；对手提议时你也调用 offer_draw 就是同意。
+7. 推演：只有 start_simulation 之后才生效，虚拟棋盘上双方棋子都能走，最多 8 步，
+   期间的 move / list_legal_moves 等都会自动切到虚拟棋盘，不影响真实对局；
+   推演完成后必须重新用 move 在真实棋盘落子。频繁推演会明显拖长一局的时间，慎用。
 """
 
 
@@ -100,6 +104,7 @@ class LLMPlayer:
         self.label = label or "%s / %s" % (config.provider, config.model)
         self.enabled_tools = set(enabled_tools) if enabled_tools else None
         self.notes = []
+        self.sim = None
         self.blocks = []
         self.inbox = queue.Queue()
         self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
@@ -113,7 +118,7 @@ class LLMPlayer:
     # ------------------------------------------------------------------ turn
     def choose(self, game):
         self.turns += 1
-        self.toolbox = ToolBox(game, self.side, allowed=self.enabled_tools)
+        self.toolbox = ToolBox(game, self.side, allowed=self.enabled_tools, player=self)
         block = []
         self._drain_inbox(block)
         block.append({"role": "user", "content": self._turn_prompt(game)})
@@ -139,7 +144,7 @@ class LLMPlayer:
                 )
                 return self._abort(last_text, error="step limit")
             self.emit({"type": "llm_step", "side": self.side, "step": step})
-            chat_kwargs = {"tools": tool_specs()}
+            chat_kwargs = {"tools": tool_specs(self.enabled_tools)}
             if getattr(self.client, "supports_streaming", False):
                 chat_kwargs["on_delta"] = self._on_delta
             try:
@@ -214,8 +219,19 @@ class LLMPlayer:
                         "result": self._summarise(outcome),
                     }
                 )
+                self.emit(
+                    {
+                        "type": "sim",
+                        "side": self.side,
+                        "snapshot": self._sim_snapshot(),
+                    }
+                )
                 if call.name == "move" and outcome.get("ok"):
+                    if outcome.get("simulated"):
+                        continue
                     piece_id, to = self.toolbox.pending
+                    self.sim = None
+                    self.emit({"type": "sim", "side": self.side, "snapshot": None})
                     return self._decision(
                         piece_id=piece_id,
                         to=to,
@@ -301,6 +317,9 @@ class LLMPlayer:
         if "error" in box:
             raise box["error"]
         return box.get("result")
+
+    def _sim_snapshot(self):
+        return self.sim.snapshot() if self.sim is not None else None
 
     def _messages(self):
         return [message for block in self.blocks for message in block]
@@ -395,6 +414,7 @@ class LLMPlayer:
         self.notes = []
         self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
         self.context_tokens = 0
+        self.sim = None
         self._cancelled = False
         self._delta_parts = []
         self._last_text = ""

@@ -15,7 +15,7 @@
 - **两种对局**：AI 对战 AI（双方思考、工具调用、留言全部可见），以及对战 AI（AI 内部过程对你隐藏）
 - **棋手与模型解耦**：模型统一存在本地模型库，填 base_url / Key 后可「获取模型」下拉选择，红黑各挑一个
 - **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 全局唯一，走子后编号不变
-- **12 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
+- **14 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
 - **独立上下文**：每个 AI 只有自己的对话历史，互不污染；默认中文提示词与中文记谱
 - **流式思考**：思考内容逐字推送；思考和工具调用默认折叠，点开看全文
 - **不限步数**：模型可以反复查询、思考到满意再落子；点「停止」会立即中断请求并结束对局
@@ -126,9 +126,19 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
   思考、工具调用、留言一起放出；点棋谱任意一手可直接跳转，键盘 ← → 也能切换
 - 终局后双方 AI 会各说一句道别
 
+## 推演棋盘
+
+开启后可以在一块虚拟棋盘上试走，双方棋子都能动，最多 8 步（含双方），到上限或手动退出后回到真实对局。
+
+- **AI**：工具列表里的 `start_simulation` / `end_simulation`。推演期间的 `move`、`list_legal_moves`、`get_status` 等会自动切到虚拟棋盘，不会影响真实棋局；`list_legal_moves` 会额外给出每步能吃哪个子、是否将军，但不会提示是否绝杀。AI 推演时观战界面会同步显示虚拟棋盘。
+- **人类**：人机模式右侧有「推演棋盘」按钮，点击后在与 AI 相同的虚拟棋盘上走子（双方棋子都可以动），最多 8 步；人机模式下 AI 的推演对你不可见。
+- 推演棋盘只在当前对局内有效，真实落子或退出后即清空。
+
+> **注意**：如果启用推演棋盘工具，AI 可能反复推演，导致一局的时间被严重拖长。可以在设置 → 工具开关里关掉它；关闭后该工具不会出现在模型的工具列表中。
+
 ## 工具接口
 
-共 12 个工具，可在设置里逐个开关（`move` 必选）。关闭的工具不会出现在模型工具列表中。
+共 14 个工具，可在设置里逐个开关（`move` 必选）。关闭的工具不会出现在模型工具列表中。
 
 | 工具 | 作用 | 示例参数 |
 |---|---|---|
@@ -139,6 +149,8 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 | `get_status` | 轮次、状态、结果、将军、手数、重复局面、子力 | `{}` |
 | `get_history` | 最近若干步着法与留言 | `{"last": 8}` |
 | `send_message` | 给对手留言（每局 6 条，每条 80 字） | `{"text": "承让"}` |
+| `start_simulation` | 进入推演棋盘（虚拟对局，最多 8 步） | `{}` |
+| `end_simulation` | 退出推演，回到真实棋盘 | `{}` |
 | `offer_draw` | 提议和棋，附一句 note；对手也提议即双方同意 | `{"note": "局面均势"}` |
 | `note` | 给自己记备忘，后续回合出现在提示里 | `{"text": "防他马八进七"}` |
 | `resign` | 认输 | `{"reason": "无路可走"}` |
@@ -212,7 +224,7 @@ xiangqi_duel/
   moves.py        走子生成、攻击判定、perft
   notation.py     中文记谱
   game.py         对局状态、判负与判和
-  tools.py        12 个 LLM 工具
+  tools.py        14 个 LLM 工具
   llm.py          OpenAI 兼容 / Anthropic 客户端
   agent.py        LLM 棋手（独立上下文）与本地引擎棋手
   arena.py        对局编排、事件流、留言、和棋
@@ -243,7 +255,7 @@ CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)，复制到 `.github/w
 ## English
 
 Xiangqi Duel is a dependency-free Chinese chess game built for LLM agents. Two AIs
-(any OpenAI-compatible or Anthropic provider) play each other with twelve tools such as
+(any OpenAI-compatible or Anthropic provider) play each other with fourteen tools such as
 `list_legal_moves("red_horse_1")` and `move(...)`; each side keeps its own context and
 can chat with the opponent via `send_message`. A spectator page shows every thought and
 tool call, while human-vs-AI hides the AI's internal reasoning. Models live in a local

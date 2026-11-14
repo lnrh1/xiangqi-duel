@@ -12,6 +12,7 @@ class ToolSpecTest(unittest.TestCase):
             "list_pieces", "get_piece", "list_legal_moves", "move", "get_status",
             "get_history", "send_message", "offer_draw", "note", "resign",
             "list_pieces_in_area", "describe_square",
+            "start_simulation", "end_simulation",
         ):
             self.assertIn(name, names)
 
@@ -136,3 +137,36 @@ class CoordinateToolsTest(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIsNone(result["piece"])
         self.assertFalse(result["in_red_palace"])
+
+
+class SimulationToolTest(unittest.TestCase):
+    class Holder:
+        sim = None
+
+    def test_simulation_redirect_and_limit(self):
+        holder = self.Holder()
+        game = Game()
+        box = ToolBox(game, "red", player=holder)
+        self.assertTrue(box.call("start_simulation")["ok"])
+        detail = box.call("list_legal_moves", {"piece_id": "red_horse_1"})["moves"]["red_horse_1"][0]
+        self.assertIn("gives_check", detail)
+        self.assertIn("capture", detail)
+        for index in range(8):
+            side = "red" if index % 2 == 0 else "black"
+            piece = side + "_horse_1"
+            targets = box.call("list_legal_moves", {"piece_id": piece})["moves"][piece]
+            result = box.call("move", {"piece_id": piece, "to": targets[0]["to"]})
+            self.assertTrue(result["ok"], result)
+            self.assertTrue(result["simulated"])
+            if index < 7:
+                self.assertFalse(result["ended"])
+        self.assertIsNone(holder.sim)
+        self.assertEqual(game.history, [])
+
+    def test_end_simulation(self):
+        holder = self.Holder()
+        game = Game()
+        box = ToolBox(game, "red", player=holder)
+        box.call("start_simulation")
+        self.assertTrue(box.call("end_simulation")["ok"])
+        self.assertIsNone(holder.sim)
