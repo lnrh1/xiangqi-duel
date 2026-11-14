@@ -1948,6 +1948,7 @@
   function exitReplay() {
     if (!state.replay || !state.replay.active) { return; }
     state.replay.active = false;
+    state.movesSignature = "";
     $('replay-bar').classList.add('hidden');
     $('tab-trace').classList.add('hidden');
     if (state.snapshot && state.snapshot.mode === 'aivai') {
@@ -2018,6 +2019,7 @@
       html += traceItemHtml(entry);
     });
     list.innerHTML = html;
+    restoreTraceOpen(list);
     list.scrollTop = list.scrollHeight;
   }
 
