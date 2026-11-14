@@ -107,7 +107,10 @@ xiangqi-duel models add --provider custom --model my-model --base-url https://ap
 
 ### 人类 vs AI
 
-把任意一侧选成「人类」。在棋盘上点自己的棋子，绿色圆点是可走位置，再点目标格落子。
+把任意一侧选成「人类」。在棋盘上点自己的棋子：**绿色圆点**是可走位置，**红色圆点**表示可以吃子，再点目标格落子。
+
+![人机对弈：绿点可走，红点可吃](docs/screenshot-dots.png)
+
 
 对话输入框会把你的话投递给 AI；它可以用 `send_message` 回你，也可以不理你。
 人机模式下 AI 的思考与工具调用不会出现在页面上，只显示它公开说的话和对局结果。
@@ -224,6 +227,9 @@ python3 -m unittest discover -s tests -v
 
 覆盖规则与 perft、记谱、工具、引擎、代理循环（含非法着法重试与兜底）、
 模型库、对局编排与 HTTP 接口。
+
+CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)：复制到 `.github/workflows/ci.yml` 即可启用
+（当前推送用的 token 没有 Workflows 权限，所以暂时放在 docs/）。
 
 ## 示例对局
 

@@ -96,12 +96,12 @@
   .piece.movable { cursor: pointer; }
   .marker {
     position: absolute; width: 4.4%; aspect-ratio: 1; border-radius: 50%;
-    transform: translate(-50%, -50%); background: rgba(32, 138, 72, .95); z-index: 2;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, .55), 0 1px 5px rgba(0, 0, 0, .35);
+    transform: translate(-50%, -50%); background: rgba(74, 107, 87, .8); z-index: 2;
+    box-shadow: 0 0 0 2px rgba(250, 246, 235, .45), 0 1px 4px rgba(0, 0, 0, .28);
   }
   .marker.capture {
-    background: #d92d20; width: 6.4%; z-index: 5;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, .85), 0 1px 6px rgba(0, 0, 0, .45);
+    background: rgba(158, 59, 46, .85); width: 4.2%; z-index: 5;
+    box-shadow: 0 0 0 2px rgba(250, 246, 235, .7), 0 1px 5px rgba(0, 0, 0, .35);
   }
   .legend {
     display: flex; align-items: center; gap: 10px; width: min(66vh, 100%);
@@ -941,7 +941,7 @@
     var selectId = params.get('select');
     if (selectId && state.snapshot && state.snapshot.mode === 'human') {
       state.selected = selectId;
-      renderMarkers(state.snapshot);
+      renderBoard(state.snapshot);
     }
     if (!state.staticMode) { setInterval(refreshState, 1500); }
   }

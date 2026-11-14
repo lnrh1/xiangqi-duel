@@ -62,3 +62,28 @@ server {
   谁能打开页面谁就能管理模型库；
 - 对局同一时间只保留一场，开始新对局会终止旧对局；
 - 如果只想安静地跑一局，用 CLI：`xiangqi-duel play --red model:m-x --black model:m-y --out game.json`。
+
+## 5. 公网访问（Basic 认证 + 隧道）
+
+服务默认只监听 127.0.0.1。要对外提供访问，先给服务设密码，再用一台公网可达的机器做端口转发。
+
+服务器上（cloud-aliyun2）：
+
+```bash
+printf 'XIANGQI_DUEL_PASSWORD=换成随机密码
+' > /etc/xiangqi-duel.env
+chmod 600 /etc/xiangqi-duel.env
+systemctl restart xiangqi-duel
+```
+
+转发机上（示例，systemd）：
+
+```ini
+[Service]
+ExecStart=/usr/bin/ssh -N -g -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -L 0.0.0.0:8765:127.0.0.1:8765 root@<服务器>
+Restart=always
+RestartSec=5
+```
+
+这样外部访问 `http://<转发机>:8765` 时，浏览器会弹出 Basic 认证框，密码就是
+`XIANGQI_DUEL_PASSWORD` 的值。未认证时接口全部返回 401，只有 `/api/health` 开放。
