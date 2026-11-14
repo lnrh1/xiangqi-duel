@@ -1036,22 +1036,26 @@
   }
 
   var ART_KEYS = [
-    { key: "ChatGPT", match: ["chatgpt", "openai", "gpt-4", "gpt4"] },
+    { key: "ChatGPT", match: ["chatgpt", "openai", "gpt"] },
     { key: "DeepSeek", match: ["deepseek"] },
     { key: "Doubao", match: ["doubao", "豆包"] },
     { key: "Gemini", match: ["gemini"] },
     { key: "Grok", match: ["grok"] },
-    { key: "MiniMax", match: ["minimax", "mini-max"] },
+    { key: "MiniMax", match: ["minimax"] },
     { key: "Qwen", match: ["qwen", "通义"] }
   ];
 
   function artInfo(player) {
     if (!player || (player.kind !== "model" && player.kind !== "llm")) { return null; }
-    var hay = ((player.provider || "") + " " + (player.model || "") + " " + (player.label || "")).toLowerCase();
+    var raw = ((player.provider || "") + " " + (player.model || "") + " " + (player.label || "")).toLowerCase();
+    var letters = raw.replace(/[^a-z]/g, "");
     for (var i = 0; i < ART_KEYS.length; i += 1) {
       var entry = ART_KEYS[i];
       for (var j = 0; j < entry.match.length; j += 1) {
-        if (hay.indexOf(entry.match[j]) !== -1) {
+        var keyword = entry.match[j].toLowerCase();
+        var ascii = keyword.replace(/[^a-z]/g, "");
+        var hit = ascii ? letters.indexOf(ascii) !== -1 : raw.indexOf(keyword) !== -1;
+        if (hit) {
           return {
             normal: "/art/" + entry.key + "-normal.png",
             thinking: "/art/" + entry.key + "-thinking.png"
