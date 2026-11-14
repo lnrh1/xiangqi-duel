@@ -222,6 +222,24 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def do_HEAD(self):
+        path = urlparse(self.path).path
+        if path != "/api/health" and not self._require_auth():
+            return
+        if path in ("/", "/index.html"):
+            try:
+                with open(os.path.join(WEB_DIR, "index.html"), "rb") as handle:
+                    size = len(handle.read())
+            except OSError:
+                size = 0
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+        else:
+            self.send_response(204)
+            self.end_headers()
+
     # ------------------------------------------------------------------- POST
     def do_POST(self):
         path = urlparse(self.path).path
