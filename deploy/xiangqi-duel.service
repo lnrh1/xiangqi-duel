@@ -1,0 +1,15 @@
+[Unit]
+Description=Xiangqi Duel - Chinese chess for AI agents
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/xiangqi-duel
+Environment=PYTHONUNBUFFERED=1
+Environment=XIANGQI_DUEL_MODELS=/root/.xiangqi-duel/models.json
+ExecStart=/usr/bin/python3 -m xiangqi_duel.cli serve --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

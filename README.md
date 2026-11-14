@@ -158,6 +158,11 @@ xiangqi-duel models add --provider custom --model my-model --base-url https://ap
 
 简化说明：完整的 WXF 长捉 / 一将一捉细则没有实现，重复局面用「三次重复 + 长将」近似判定。
 
+## 部署
+
+默认只监听 `127.0.0.1`，用 SSH 隧道或 nginx + Basic Auth 访问；
+systemd 常驻、反代配置与安全注意事项见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+
 ## 命令行
 
 ```bash
