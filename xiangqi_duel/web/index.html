@@ -628,8 +628,10 @@
 
   function fitBoard() {
     var g = $('grid');
+    if (!g) { return; }
     var cell = g.clientWidth / 8;
-    document.documentElement.style.setProperty('--glyph', Math.max(12, Math.round(cell * 0.56)) + 'px');
+    if (!cell) { return; }
+    document.documentElement.style.setProperty('--glyph', Math.max(10, Math.round(cell * 0.56)) + 'px');
   }
 
   // ---------------------------------------------------------------- rendering
@@ -671,6 +673,7 @@
     $('panel-black').classList.toggle('hidden', !spectate);
     $('btn-drawer').classList.toggle('hidden', !spectate);
     $('tab-trace').classList.add('hidden');
+    fitBoard();
     if (!spectate) { $('side-panel').classList.remove('open'); }
     var subtitle = $('subtitle');
     subtitle.textContent = snap.mode === 'human'
@@ -733,6 +736,7 @@
         markersLayer.appendChild(dot);
       });
     }
+    fitBoard();
     var mine = snap.mode === 'human' && snap.turn === snap.human_side && snap.status === 'playing';
     var pieceEls = piecesLayer.querySelectorAll('.piece');
     for (var i = 0; i < pieceEls.length; i += 1) {
@@ -1080,6 +1084,7 @@
       await api('/api/new', { method: 'POST', body: { red: red, black: black, human_side: humanSide, max_plies: maxPlies } });
       closeSetup();
       state.selected = null;
+      fitBoard();
       connectEvents();
       refreshState();
     } catch (err) {
@@ -1612,6 +1617,7 @@
         x += 1;
       }
     }
+    fitBoard();
     markersLayer.innerHTML = '';
     if (lastMove) {
       [lastMove.from, lastMove.to].forEach(function (name) {
@@ -2051,6 +2057,13 @@
     drawGrid();
     bindEvents();
     fitBoard();
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { fitBoard(); }).observe($('grid'));
+    }
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { fitBoard(); }).catch(function () {});
+    }
+    window.requestAnimationFrame(function () { fitBoard(); });
     state.staticMode = window.location.search.indexOf('static=1') !== -1;
     await refreshState();
     if (!state.snapshot && !state.staticMode) { openSetup(); }
