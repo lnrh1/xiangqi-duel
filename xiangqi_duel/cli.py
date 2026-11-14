@@ -102,7 +102,13 @@ def cmd_serve(args):
         added = registry.bootstrap_from_env()
         if added:
             print("已从环境变量导入 %d 个模型到模型库。" % len(added))
-    serve_http(host=args.host, port=args.port, registry=registry, games_dir=args.games_dir)
+    serve_http(
+        host=args.host,
+        port=args.port,
+        registry=registry,
+        games_dir=args.games_dir,
+        password=args.password or os.environ.get("XIANGQI_DUEL_PASSWORD"),
+    )
 
 
 def cmd_play(args):
@@ -308,6 +314,7 @@ def build_parser():
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--games-dir", default=None)
+    serve.add_argument("--password", default="", help="HTTP Basic 认证密码（也可用 XIANGQI_DUEL_PASSWORD）")
     serve.set_defaults(func=cmd_serve)
 
     play = sub.add_parser("play", help="在终端运行一局")

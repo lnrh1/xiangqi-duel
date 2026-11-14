@@ -7,6 +7,7 @@ Type=simple
 WorkingDirectory=/opt/xiangqi-duel
 Environment=PYTHONUNBUFFERED=1
 Environment=XIANGQI_DUEL_MODELS=/root/.xiangqi-duel/models.json
+EnvironmentFile=-/etc/xiangqi-duel.env
 ExecStart=/usr/bin/python3 -m xiangqi_duel.cli serve --host 127.0.0.1 --port 8765
 Restart=on-failure
 RestartSec=3

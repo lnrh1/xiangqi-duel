@@ -1,9 +1,11 @@
 """本地 Web 服务：观战、人机对弈与模型库管理。"""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
+import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,8 +37,9 @@ def provider_catalog():
 
 
 class AppState:
-    def __init__(self, registry=None, games_dir=None):
+    def __init__(self, registry=None, games_dir=None, password=None):
         self.registry = registry or ModelRegistry()
+        self.password = password or None
         self.games_dir = games_dir or os.path.join(DEFAULT_HOME, "games")
         self.lock = threading.RLock()
         self.match = None
@@ -108,6 +111,29 @@ class Handler(BaseHTTPRequestHandler):
     def state(self):
         return self.server.app
 
+    def _authorized(self):
+        password = self.server.app.password
+        if not password:
+            return True
+        header = self.headers.get("Authorization") or ""
+        if not header.startswith("Basic "):
+            return False
+        try:
+            decoded = base64.b64decode(header[6:]).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            return False
+        given = decoded.split(":", 1)[-1]
+        return secrets.compare_digest(given, password)
+
+    def _require_auth(self):
+        if self._authorized():
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Xiangqi Duel"')
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
+
     def log_message(self, fmt, *args):
         pass
 
@@ -159,6 +185,8 @@ class Handler(BaseHTTPRequestHandler):
     # -------------------------------------------------------------------- GET
     def do_GET(self):
         path = urlparse(self.path).path
+        if path != "/api/health" and not self._require_auth():
+            return
         if path in ("/", "/index.html"):
             self._static("index.html")
         elif path == "/api/health":
@@ -197,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------- POST
     def do_POST(self):
         path = urlparse(self.path).path
+        if not self._require_auth():
+            return
         try:
             body = self._read_json()
         except ValueError as exc:
@@ -264,6 +294,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+        if not self._require_auth():
+            return
         if path.startswith("/api/models/"):
             model_id = path[len("/api/models/"):].strip("/")
             try:
@@ -360,15 +392,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-def create_server(host="127.0.0.1", port=8765, registry=None, games_dir=None):
+def create_server(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None):
     server = ThreadingHTTPServer((host, port), Handler)
     server.daemon_threads = True
-    server.app = AppState(registry=registry, games_dir=games_dir)
+    server.app = AppState(registry=registry, games_dir=games_dir, password=password)
     return server
 
 
-def serve(host="127.0.0.1", port=8765, registry=None, games_dir=None):
-    server = create_server(host, port, registry=registry, games_dir=games_dir)
+def serve(host="127.0.0.1", port=8765, registry=None, games_dir=None, password=None):
+    server = create_server(host, port, registry=registry, games_dir=games_dir, password=password)
     print("象棋对弈 · Xiangqi Duel %s" % __version__)
     print("打开 http://%s:%d" % (host, port))
     if host not in ("127.0.0.1", "localhost"):

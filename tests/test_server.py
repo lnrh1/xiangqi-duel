@@ -220,3 +220,47 @@ class ResignTest(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+
+class AuthTest(unittest.TestCase):
+    def test_basic_auth(self):
+        import base64
+        import json as _json
+        import threading as _threading
+        import urllib.error as _errors
+        import urllib.request as _urllib
+        from xiangqi_duel.models import ModelRegistry as _Registry
+        from xiangqi_duel.server import create_server as _create
+
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = _Registry(os.path.join(tmp, "models.json"))
+            server = _create(
+                "127.0.0.1", 0, registry=registry, games_dir=os.path.join(tmp, "games"),
+                password="s3cret",
+            )
+            port = server.server_address[1]
+            thread = _threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = "http://127.0.0.1:%d" % port
+
+            def get(path, token=None):
+                request = _urllib.Request(base + path)
+                if token:
+                    request.add_header("Authorization", "Basic " + base64.b64encode(b"duel:" + token.encode()).decode())
+                try:
+                    with _urllib.urlopen(request, timeout=10) as response:
+                        return response.status, response.read()
+                except _errors.HTTPError as exc:
+                    return exc.code, exc.read()
+
+            try:
+                status, _ = get("/api/models")
+                self.assertEqual(status, 401)
+                status, body = get("/api/models", "s3cret")
+                self.assertEqual(status, 200)
+                self.assertIn(b"models", body)
+                status, _ = get("/api/health")
+                self.assertEqual(status, 200)
+            finally:
+                server.shutdown()
+                server.server_close()
