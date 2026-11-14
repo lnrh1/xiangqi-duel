@@ -2200,7 +2200,8 @@
     var lobby = state.lobby;
     $('side-red-label').textContent = entryLabel(lobby.red);
     $('side-black-label').textContent = entryLabel(lobby.black);
-    $('lobby-start').disabled = !(lobby.red && lobby.black);
+    var bothHuman = lobby.red && lobby.black && lobby.red.kind === 'human' && lobby.black.kind === 'human';
+    $('lobby-start').disabled = !(lobby.red && lobby.black) || bothHuman;
   }
 
   function openLobby(mode) {
@@ -2210,19 +2211,16 @@
       black: null
     };
     $('lobby-title').textContent = mode === 'human' ? '人机对弈 · 选择 AI' : 'AI 对战 AI · 选择双方';
-    $('side-red').classList.toggle('locked', mode === 'human');
+    $('side-red').classList.remove('locked');
     $('lobby-hint').textContent = mode === 'human'
-      ? '红方固定为你，点击黑方选择模型'
+      ? '点一侧选择「我」或 AI；另一边会自动补位'
       : '两边默认空位；选一个模型后另一边会自动填为「我」';
     updateLobby();
     setScreen('lobby');
   }
 
   function pickerEntries() {
-    var entries = [];
-    if (state.lobby.mode !== 'human') {
-      entries.push({ kind: 'human', label: '我（人类）', sub: '自己坐这一边' });
-    }
+    var entries = [{ kind: 'human', label: '我（人类）', sub: '自己坐这一边' }];
     entries.push({ kind: 'engine', label: '本地引擎（离线）', sub: '无需 API' });
     state.models.forEach(function (model) {
       entries.push({
@@ -2235,10 +2233,7 @@
     return entries;
   }
 
-  function openPicker(side) {
-    if (state.lobby.mode === 'human' && side === 'red') { return; }
-    state.pickerSide = side;
-    $('picker-title').textContent = side === 'red' ? '选择红方' : '选择黑方';
+  function renderPickerList() {
     var html = '';
     pickerEntries().forEach(function (entry) {
       var value = entry.kind === 'model' ? 'model:' + entry.id : entry.kind;
@@ -2248,7 +2243,16 @@
         '<span class="sub">' + esc(entry.sub || '') + '</span></button>';
     });
     $('picker-list').innerHTML = html;
+  }
+
+  function openPicker(side) {
+    state.pickerSide = side;
+    $('picker-title').textContent = side === 'red' ? '选择红方' : '选择黑方';
+    renderPickerList();
     $('picker').classList.remove('hidden');
+    loadModels().then(function () {
+      if (!$('picker').classList.contains('hidden')) { renderPickerList(); }
+    }).catch(function () {});
   }
 
   function choosePick(button) {
@@ -2536,6 +2540,7 @@
     } catch (err) {}
     state.staticMode = window.location.search.indexOf('static=1') !== -1;
     await refreshState();
+    await loadModels().catch(function (err) { toast(err.message); });
     if (!state.snapshot && !state.staticMode) { showHome(); }
     if (state.snapshot) { setScreen(null); }
     var screenParams = new URLSearchParams(window.location.search);
@@ -2544,6 +2549,10 @@
     else if (screenParam === 'modes') { setScreen('modes'); }
     else if (screenParam === 'lobby') {
       openLobby(screenParams.get('mode') === 'human' ? 'human' : 'aivai');
+      var pickParam = screenParams.get('picker');
+      if (pickParam === 'red' || pickParam === 'black') {
+        setTimeout(function () { openPicker(pickParam); }, 300);
+      }
     } else if (screenParam === 'settings') {
       openSettings();
     }
