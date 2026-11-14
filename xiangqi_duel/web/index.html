@@ -128,12 +128,12 @@
   .art-info b { color: var(--text); font-weight: 600; }
   .art-info.hidden { display: none; }
   .human-stage {
-    position: fixed; right: 22px; bottom: 48px; width: 320px; height: 290px;
+    position: fixed; right: 22px; top: 120px; width: 320px; height: 300px;
     z-index: 5; display: none;
   }
   .human-stage.on { display: flex; }
   .human-info {
-    position: fixed; right: 22px; bottom: 12px; width: auto; z-index: 6;
+    position: fixed; right: 22px; top: 120px; width: auto; z-index: 6;
   }
   .art-stage img {
     max-height: 100%; max-width: 100%; width: auto; object-fit: contain;
@@ -935,6 +935,7 @@
     renderStatus(snap);
     renderPlayers(snap);
     renderArtStages(snap);
+    layoutHumanArt();
     ['red', 'black', 'human'].forEach(function (key) {
       var box = $('art-info-' + key);
       if (box && !box.classList.contains('hidden')) { renderArtInfo(key); }
@@ -1166,6 +1167,33 @@
     clearTimeout(artInfoTimers[key]);
   }
 
+  function layoutHumanArt() {
+    var stage = $('art-stage-human');
+    var info = $('art-info-human');
+    var panel = $('side-panel');
+    if (!stage || !info || !panel) { return; }
+    if (!stage.classList.contains('on')) { return; }
+    var rect = panel.getBoundingClientRect();
+    var right = Math.max(16, window.innerWidth - rect.right);
+    var width = Math.min(Math.max(rect.width, 260), 380);
+    var top = rect.bottom + 16;
+    var available = window.innerHeight - top - 42;
+    var height = Math.max(170, Math.min(390, available - 26));
+    if (available < 240) {
+      height = 210;
+      top = Math.max(90, window.innerHeight - height - 48);
+    }
+    stage.style.right = right + 'px';
+    stage.style.width = width + 'px';
+    stage.style.height = height + 'px';
+    stage.style.top = top + 'px';
+    stage.style.bottom = 'auto';
+    info.style.right = right + 'px';
+    info.style.width = width + 'px';
+    info.style.top = (top + height + 8) + 'px';
+    info.style.bottom = 'auto';
+  }
+
   function renderArtStages(snap) {
     ['red', 'black'].forEach(function (side) {
       var stage = $(side === 'red' ? 'art-stage-red' : 'art-stage-black');
@@ -1207,6 +1235,7 @@
     humanStage.innerHTML = '<img src="' + (humanBusy ? humanArt.thinking : humanArt.normal) + '" alt="">';
     humanStage.classList.add('on');
     humanStage.classList.toggle('flip', humanSide === 'black');
+    layoutHumanArt();
   }
 
   function renderPlayers(snap) {
@@ -2764,7 +2793,7 @@
       handleSquare(name);
     });
 
-    window.addEventListener('resize', fitBoard);
+    window.addEventListener('resize', function () { fitBoard(); layoutHumanArt(); });
   }
 
   async function init() {
