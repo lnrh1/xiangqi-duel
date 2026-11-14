@@ -558,16 +558,6 @@
   .side-art.flip img { transform: scaleX(-1); }
 
   .lobby-actions { display: flex; gap: 14px; align-items: center; }
-  .sim-bar {
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    width: min(66vh, 100%); margin: 0 auto 10px; padding: 6px 12px;
-    border: 1px dashed #8b7bff; border-radius: 10px;
-    background: rgba(90, 76, 200, .12); color: #cfc7ff; font-size: 13px;
-  }
-  .sim-bar.hidden { display: none; }
-  .sim-bar strong { color: #e6e1ff; font-size: 14px; }
-  .sim-bar .hint { color: #b9b0ee; }
-  .sim-bar .btn { margin-left: auto; }
   .board.simulating {
     outline: 2px dashed #8b7bff; outline-offset: 7px;
     box-shadow: 0 0 0 10px rgba(139, 123, 255, .08),
@@ -650,11 +640,6 @@
 
   <section class="board-panel">
     <div class="players-inline hidden" id="players-inline"></div>
-    <div class="sim-bar hidden" id="sim-bar">
-      <strong id="sim-title">推演棋盘</strong>
-      <span class="hint" id="sim-count"></span>
-      <button class="btn ghost" id="sim-exit">退出推演</button>
-    </div>
     <div class="board" id="board">
       <div class="grid" id="grid">
         <svg id="board-svg" viewBox="0 0 8 9" preserveAspectRatio="none"></svg>
@@ -682,7 +667,7 @@
       <button class="btn drawer-close" id="drawer-close">收起</button>
       <div class="players" id="players"></div>
       <div class="sim-actions hidden" id="sim-actions">
-        <button class="btn" id="btn-sim">推演棋盘（≤8 步）</button>
+        <button class="btn" id="btn-sim">进入推演</button>
       </div>
       <div class="tabs">
         <button class="tab active" data-tab="moves">棋谱</button>
@@ -2677,11 +2662,8 @@
     var sim = state.sim;
     if (!sim || !sim.snapshot) { return; }
     var snap = sim.snapshot;
-    $('sim-bar').classList.remove('hidden');
     $('board').classList.add('simulating');
-    $('sim-title').textContent = sim.human ? '我的推演' : (snap.turn === 'red' ? '红方推演' : '黑方推演');
-    $('sim-count').textContent = (snap.plies || 0) + ' / ' + (snap.limit || 8) + ' 步';
-    $('sim-exit').classList.toggle('hidden', !sim.human);
+    updateSimButton();
     var html = '';
     (snap.pieces || []).forEach(function (piece) {
       html += '<div class="piece ' + piece.color + '" data-id="' + esc(piece.id) + '" data-square="' + esc(piece.square) +
@@ -2693,7 +2675,9 @@
       ((snap.legal || {})[state.simSelected] || []).forEach(function (name) {
         var x = 'abcdefghi'.indexOf(name.charAt(0));
         var y = parseInt(name.slice(1), 10);
-        markers += '<div class="marker" data-square="' + name + '" style="left:' + leftFor(x) + '%;top:' + topFor(y) + '%"></div>';
+        var occupied = (snap.pieces || []).some(function (piece) { return piece.square === name; });
+        markers += '<div class="marker' + (occupied ? ' capture' : '') + '" data-square="' + name +
+          '" style="left:' + leftFor(x) + '%;top:' + topFor(y) + '%"></div>';
       });
     }
     markersLayer.innerHTML = markers;
@@ -2702,8 +2686,8 @@
   function hideSim() {
     state.sim = null;
     state.simSelected = null;
-    $('sim-bar').classList.add('hidden');
     $('board').classList.remove('simulating');
+    updateSimButton();
     if (state.snapshot) { renderBoard(state.snapshot); }
   }
 
@@ -2719,6 +2703,13 @@
     var targets = (snap.legal || {})[pieceId] || [];
     state.simSelected = targets.length ? pieceId : null;
     renderSimBoard();
+  }
+
+  function updateSimButton() {
+    var button = $('btn-sim');
+    if (button) {
+      button.textContent = (state.sim && state.sim.human) ? '退出推演' : '进入推演';
+    }
   }
 
   function showSim(snapshot, side, human, ended) {
@@ -2772,6 +2763,11 @@
       }
     });
     $('btn-sim').addEventListener('click', async function () {
+      if (state.sim && state.sim.human) {
+        try { await api('/api/sim/end', { method: 'POST', body: {} }); } catch (err) {}
+        hideSim();
+        return;
+      }
       try {
         var data = await api('/api/sim/start', { method: 'POST', body: {} });
         state.simSelected = null;
@@ -2779,12 +2775,6 @@
       } catch (err) {
         toast(err.message);
       }
-    });
-    $('sim-exit').addEventListener('click', async function () {
-      if (state.sim && state.sim.human) {
-        try { await api('/api/sim/end', { method: 'POST', body: {} }); } catch (err) {}
-      }
-      hideSim();
     });
     $('btn-drawer').addEventListener('click', function () {
       $('side-panel').classList.toggle('open');
@@ -3025,6 +3015,12 @@
       }
     } else if (screenParam === 'settings') {
       openSettings();
+    }
+    var simSelect = screenParams.get('simselect');
+    if (simSelect) {
+      setTimeout(function () {
+        if (state.sim) { state.simSelected = simSelect; renderSimBoard(); }
+      }, 1300);
     }
     var artClick = screenParams.get('artclick');
     if (artClick) {
