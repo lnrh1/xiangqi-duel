@@ -2,7 +2,6 @@
 
 > 双 AI 观战 · 人机对弈 · 模型库 · 工具调用
 
-![tests](https://github.com/lnrh1/xiangqi-duel/actions/workflows/ci.yml/badge.svg)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
 

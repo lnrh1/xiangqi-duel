@@ -1,3 +1,5 @@
+# 启用 CI：把本文件复制到 .github/workflows/ci.yml 再提交即可
+# （需要 token 具备 Workflows 权限；当前 token 没有，所以先放在 docs/）
 name: tests
 
 on:
