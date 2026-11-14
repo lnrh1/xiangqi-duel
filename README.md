@@ -1,43 +1,32 @@
 # 象棋对弈 · Xiangqi Duel
 
-> 双 AI 观战 · 人机对弈 · 模型库 · 工具调用
-
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![python](https://img.shields.io/badge/python-3.9%2B-blue)
+![deps](https://img.shields.io/badge/dependencies-none-success)
 
-一个完整的中国象棋 AI 对弈软件：内置规则引擎、稳定的棋子编码、12 个 LLM 工具、
-可自由切换提供商的模型库，以及一个实时观战网页。
-
-红黑双方各自维护独立上下文，用中文思考、记谱和发言。AI 对 AI 时你能看到每一步的
-思路与工具调用；人机对弈时这些内部过程对你隐藏，只保留它公开说的话。
+双 AI 观战 / 人机对弈的中国象棋，面向 LLM 智能体设计：模型自主思考、调用工具、互相留言；
+你可以观战、亲自下场，或复盘整局。
 
 ![观战界面](docs/screenshot.png)
 
-
-![模型库与对局设置](docs/setup.png)
-
 ## 特性
 
-- **首页与模式**：主页 → 选模式（我对战 AI / AI 对战 AI）→ 两侧点选模型 → 开局；设置页管理模型库与工具开关
-- **两种模式**：双 AI 观战（透明展示思考 / 工具调用 / 留言）与人机对弈（隐藏 AI 内部过程）
-- **选手与模型解耦**：模型统一登记在本地模型库（填 base_url + Key 后可一键「获取模型」列表，点选填入），开局时给红黑各挑一个
-- **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 这类编号全局唯一，走子后不变
-- **工具接口**：`list_legal_moves(red_horse_1)`、坐标范围查询、格子查询、留言、和棋提议等 12 个工具，可在设置里逐个开关（move 必选）
-- **独立上下文**：每个 AI 只有自己的对话历史，互相不污染
-- **中文提示词**：默认中文思考和记谱，避免输出跑成英文
-- **AI 留言**：`send_message` 让双方互相喊话；人机模式里你也可以在输入框发言
-- **观战三栏**：棋盘居中，红方思考在左、黑方在右；棋谱 / 对话收进顶部抽屉，不占版面；思考和工具调用默认折叠，点开看全文
-- **模型立绘**：设置里可开关；选人时在对应一侧显示立绘（黑方镜像），轮到它思考 / 调工具时自动切换为思考状态，其余时间保持普通状态；点击立绘会浮出一行 token 统计（总输入 / 缓存命中 / 总输出 / 当前上下文），3 秒后自动消失
-- **人机布局**：棋盘在左，棋手、棋谱与对话在右，与观战模式互不影响
-- **悬停复现**：鼠标在棋谱某一行停留 1 秒，棋盘上会重放这一手（悬停时循环播放，移开就播完即止）
-- **流式输出**：思考内容逐字推送，不再是等一整段
-- **零第三方依赖**：只用 Python 标准库，HTTP / SSE / 回放全部自带的
-- **可离线**：内置 alpha-beta 引擎，没有 API Key 也能完整对弈与观战
-- **将军 / 绝杀特效**：红屏闪光、震屏、扩散光环、粒子迸发、古风大字，音效可开关
-- **对局结束特效**：胜利 / 失败 / 和棋 / 认输各有配色与动画，认输会展示原因
-- **再来一局**：保留双方 AI 的对话记忆，直接开下一盘
-- **可回放**：一键导出单文件 HTML 回放
-- **规则可靠**：走子生成经过 perft 校验，深度 1/2/3 与标准值 44 / 1920 / 79666 一致
+- **首页与选人**：主页 → 选择模式 → 两侧点选棋手 → 开局；设置页管理模型库、工具开关和外观
+- **两种对局**：AI 对战 AI（双方思考、工具调用、留言全部可见），以及对战 AI（AI 内部过程对你隐藏）
+- **棋手与模型解耦**：模型统一存在本地模型库，填 base_url / Key 后可「获取模型」下拉选择，红黑各挑一个
+- **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 全局唯一，走子后编号不变
+- **12 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
+- **独立上下文**：每个 AI 只有自己的对话历史，互不污染；默认中文提示词与中文记谱
+- **流式思考**：思考内容逐字推送；思考和工具调用默认折叠，点开看全文
+- **不限步数**：模型可以反复查询、思考到满意再落子；点「停止」会立即中断请求并结束对局
+- **模型立绘**：内置 7 套立绘，可在设置里开关；选人两侧显示对应立绘（黑方镜像），思考时切换表情；点击立绘显示一行 token 统计（3 秒后自动消失）
+- **棋谱交互**：鼠标在棋谱某一行停留 1 秒，棋盘上重放这一手；悬停时循环，移开播完即止
+- **复盘**：终局后可从头逐步回放，一步 = 一方的一整个回合（思考、工具、留言一起放出）
+- **再来一局**：保留双方模型与设置，直接开下一盘
+- **离线可用**：内置 alpha-beta 引擎，没有 API Key 也能完整对弈
+- **零第三方依赖**：仅 Python 标准库，HTTP / SSE / 回放全部自带
+- **规则可靠**：走子生成通过 perft 校验，深度 1/2/3 为 44 / 1920 / 79666
+- **音效**：落子、吃子、将军、终局与立绘点击都有代码合成的音效，可一键关闭
 
 ## 快速开始
 
@@ -49,9 +38,8 @@ cd xiangqi-duel
 python3 -m xiangqi_duel.cli serve
 ```
 
-打开 http://127.0.0.1:8765 ，点「新对局」。
-
-没有任何 API Key 也能玩：红黑两侧都选「本地引擎（离线）」，直接观战。
+打开 http://127.0.0.1:8765 ，点「新对局」。没有 API Key 也能玩：
+两侧都选「本地引擎（离线）」即可观战。
 
 也可以用 pip 安装：
 
@@ -63,9 +51,9 @@ xiangqi-duel serve --port 8765
 ## 添加模型
 
 模型库保存在 `~/.xiangqi-duel/models.json`（权限 600）。密钥不会回显到页面，
-也不会写进对局日志。三种添加方式：
+也不会写进对局日志。
 
-1. 网页：新对局 → ① 模型库 → 填提供商 / 模型 / API Key → 添加
+1. 网页：设置 → 模型库，填提供商 / 模型 / API Key，点「获取模型」拉取列表后选择
 2. 命令行：
 
    ```bash
@@ -97,109 +85,88 @@ xiangqi-duel serve --port 8765
 | ollama | OpenAI 兼容（本地） | http://127.0.0.1:11434/v1 | — |
 | engine | 内置引擎 | — | — |
 
-其他 OpenAI 兼容服务：页面里选「自定义 base_url」，或者
+其他 OpenAI 兼容服务选「自定义 base_url」，或：
 
 ```bash
 xiangqi-duel models add --provider custom --model my-model --base-url https://api.example.com/v1 --api-key sk-xxx
 ```
 
-## 两种对局模式
+## 对局模式
 
-### AI vs AI（观战）
+### AI 对战 AI
 
-红黑各选一个模型 → 开始。右侧三个页签：
+双方各选一个模型。棋盘居中，红方思考在左、黑方思考在右，各自实时显示思考、工具调用与留言；
+棋谱 / 对话收在顶部抽屉里，不占版面。没有 API Key 时两边都选本地引擎即可。
 
-- **棋谱**：中文记谱与吃子标记
-- **对话**：双方用 `send_message` 发出的留言
-- **思考 / 工具**：每回合的思考文本和全部工具调用（参数 + 结果）
+### 人机对弈
 
-### 人类 vs AI
+两侧都可以选「我（人类）」，先选 AI 的一边也可以——另一边会自动变成你，因此红黑都能执。
+在棋盘上点自己的棋子：绿色圆点可走，红色圆点可吃，再点目标格落子。
 
-把任意一侧选成「人类」。在棋盘上点自己的棋子：**绿色圆点**是可走位置，**红色圆点**表示可以吃子，再点目标格落子。
-
-![人机对弈：绿点可走，红点可吃](docs/screenshot-dots.png)
-
-
-对话输入框会把你的话投递给 AI；它可以用 `send_message` 回你，也可以不理你。
-人机模式下 AI 的思考与工具调用不会出现在页面上，只显示它公开说的话和对局结果。
-
-## 将军与绝杀
-
-- **将军**：红色屏闪 + 棋盘震动 + 被将军一方的将/帅脉冲发光 + 多层光环 + 古体「将军」题字
-- **绝杀 / 困毙**：暗场 + 金色粒子迸发 + 超大「绝杀」题字 + 胜方将帅高亮，右上角可开音效
-- **对局结束**：将死 / 困毙 / 认输 / 和棋各有配色；认输会显示原因，人机模式区分「胜利」和「失败」
-
-![将军](docs/screenshot-check.png)
-
-![绝杀](docs/screenshot-mate.png)
-
-![对局结束](docs/screenshot-end.png)
-
-## 复盘
-
-对局结束后点右上角「复盘」：从开局开始，按「下一步」逐帧回放。棋盘、棋谱与右侧记录同步推进，
-每一步是「对方落子完 → 这一方落子」的一整段：思考、工具调用、留言一起放出；也可以直接点棋谱里的任意一手跳转。终局后双方 AI 还会各说一句道别。
-键盘 ← → 也能切换。复盘期间实时对局暂停，退出后恢复。
-
-![复盘](docs/screenshot-replay.png)
-
+右侧是棋手、棋谱 / 对话和聊天输入框；AI 的思考与工具调用不会出现在页面上，只显示它公开说的话。
+AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查看 token 统计。
 
 ## 模型立绘
 
-内置 7 套立绘（ChatGPT / DeepSeek / 豆包 / Gemini / Grok / MiniMax / Qwen），素材在 `xiangqi_duel/web/art/`，可在设置 → 外观里关闭。
+内置 7 套立绘（ChatGPT / DeepSeek / 豆包 / Gemini / Grok / MiniMax / Qwen），
+素材在 `xiangqi_duel/web/art/`，可在设置 → 外观里关闭。
+
+- 选人时，选中模型的一侧显示普通状态立绘，黑方镜像翻转
+- 对局中轮到它思考、调用工具或输出时，自动切换为思考状态
+- 点击立绘会弹一下并播放提示音，同时显示一行 token：总输入 / 缓存命中 / 总输出 / 当前上下文，3 秒后消失
+- 模型名匹配忽略大小写和符号，只按字母比对（`DeepSeek-V3`、`deepseek_flash`、`Deep Seek` 都能识别）
 
 ![模型立绘](docs/art-sheet.png)
 
+## 棋谱、悬停与复盘
+
+- 棋谱用中文记谱，吃子带「吃」标记，双方留言会附在对应手数后
+- 鼠标停在棋谱某一行 1 秒，棋盘会重放这一手；悬停时循环播放，移开则当前动画播完停止
+- 终局后点「复盘」：从开局开始，按「下一步」推进；一步是「对方落子完 → 这一方落子」的一整段，
+  思考、工具调用、留言一起放出；点棋谱任意一手可直接跳转，键盘 ← → 也能切换
+- 终局后双方 AI 会各说一句道别
+
 ## 工具接口
+
+共 12 个工具，可在设置里逐个开关（`move` 必选）。关闭的工具不会出现在模型工具列表中。
 
 | 工具 | 作用 | 示例参数 |
 |---|---|---|
-| `list_pieces` | 列出棋子（编号、x/y、格子名） | `{"color": "red"}` |
-| `list_pieces_in_area` | 按 x/y 范围列出棋子 | `{"x_min": 0, "x_max": 2, "y_min": 0, "y_max": 4}` |
-| `get_piece` | 单枚棋子的坐标与可走点 | `{"piece_id": "red_horse_1"}` |
-| `describe_square` | 单格信息：棋子、九宫、被谁攻击 | `{"square": "h2"}` |
-| `list_legal_moves` | 合法着法（可只查一枚棋子） | `{"piece_id": "red_horse_1"}` |
-| `move` | 走一步 | `{"piece_id": "red_horse_1", "to": "c2"}` |
-| `get_status` | 轮次、结果、重复局面次数、子力 | `{}` |
-| `get_history` | 最近的着法与留言 | `{"last": 8}` |
+| `list_pieces` | 列出棋子及编号、类型、位置 | `{"color": "red"}` |
+| `get_piece` | 单枚棋子的位置与可走点位 | `{"piece_id": "red_horse_1"}` |
+| `list_legal_moves` | 一枚棋子或全部棋子的合法着法 | `{"piece_id": "red_cannon_1"}` |
+| `move` | 走一步棋（回合结束时统一执行） | `{"piece_id": "red_horse_1", "to": "c2"}` |
+| `get_status` | 轮次、状态、结果、将军、手数、重复局面、子力 | `{}` |
+| `get_history` | 最近若干步着法与留言 | `{"last": 8}` |
 | `send_message` | 给对手留言（每局 6 条，每条 80 字） | `{"text": "承让"}` |
 | `offer_draw` | 提议和棋，附一句 note；对手也提议即双方同意 | `{"note": "局面均势"}` |
 | `note` | 给自己记备忘，后续回合出现在提示里 | `{"text": "防他马八进七"}` |
 | `resign` | 认输 | `{"reason": "无路可走"}` |
-
-坐标：file `a-i` 是列，rank `0-9` 是行；`a0` 是红方左下角，`y=0` 是红方底线。
+| `list_pieces_in_area` | 按坐标范围列出棋子 | `{"x_min": 0, "x_max": 4, "y_min": 0, "y_max": 4}` |
+| `describe_square` | 单格信息：棋子、九宫、被哪方攻击 | `{"square": "h2"}` |
 
 ## 棋子编码
 
-编号格式为 `颜色_兵种_序号`，序号按列 `a → i` 排列，红黑两侧规则一致：
+- 红方：`red_chariot_1`、`red_horse_1`、`red_elephant_1`、`red_advisor_1`、`red_general`、`red_cannon_1`、`red_soldier_1`
+- 黑方：`black_chariot_1`、`black_horse_1`、`black_elephant_1`、`black_advisor_1`、`black_general`、`black_cannon_1`、`black_soldier_1`
+- 同类多枚按纵线 a→i 编号；编号在对局中不变
+- 兼容别名：`红马1`、`redhorse1`、`horse_1`（当前方）等
 
-| 红方 | 黑方 |
-|---|---|
-| red_chariot_1 / red_chariot_2 | black_chariot_1 / black_chariot_2 |
-| red_horse_1 / red_horse_2 | black_horse_1 / black_horse_2 |
-| red_elephant_1 / red_elephant_2 | black_elephant_1 / black_elephant_2 |
-| red_advisor_1 / red_advisor_2 | black_advisor_1 / black_advisor_2 |
-| red_general | black_general |
-| red_cannon_1 / red_cannon_2 | black_cannon_1 / black_cannon_2 |
-| red_soldier_1 … red_soldier_5 | black_soldier_1 … black_soldier_5 |
-
-也接受别名：`红马1`、`redhorse1`、`horse_1`（当前行棋方）、`rook_2` 等。
+坐标：纵线 a–i 对应 x 0–8，横线 0–9 对应 y；红方底线为 y=0，a0 是红方左下角。
+UCCI 格式如 `h2`；中文记谱如「马八进七」。
 
 ## 规则
 
-- 车走直线；马走日、蹩马腿；炮走直线、吃子须隔一子；象走田、不过河；
-  士与将限九宫；将帅不能照面
+- 车走直线；马走日、蹩马腿；炮走直线、吃子须隔一子；象走田、不过河；士与将限九宫；将帅不能照面
 - 兵卒过河前只能前进，过河后可横走
-- 判负：被将死、无子可走（困毙）、长将
-- 判和：三次重复局面、60 回合无吃子、双方均无进攻子力
-- perft 校验：44 / 1920 / 79666
-
-简化说明：完整的 WXF 长捉 / 一将一捉细则没有实现，重复局面用「三次重复 + 长将」近似判定。
+- 判负：被将死、无子可走（困毙）、长将；判和：三次重复、60 回合无吃子、双方均无进攻子力
+- 简化说明：完整的 WXF 长捉 / 一将一捉细则没有实现，重复局面用「三次重复 + 长将」近似判定
+- perft：44 / 1920 / 79666
 
 ## 部署
 
-默认只监听 `127.0.0.1`，用 SSH 隧道或 nginx + Basic Auth 访问；
-systemd 常驻、反代配置与安全注意事项见 [docs/DEPLOY.md](docs/DEPLOY.md)。
+默认只监听 `127.0.0.1`。公网部署建议 nginx + Basic Auth 或 SSH 隧道；
+systemd 常驻、反向代理与安全注意事项见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ## 命令行
 
@@ -221,37 +188,41 @@ xiangqi-duel selftest
 | GET | / | 观战 / 对弈页面 |
 | GET | /api/state | 当前对局快照 |
 | GET | /api/events | SSE 事件流 |
+| GET | /api/tools | 工具列表（设置页用） |
 | GET | /api/models | 模型库（不含密钥） |
 | POST | /api/models | 添加模型 |
 | DELETE | /api/models/{id} | 删除模型 |
 | POST | /api/models/{id}/test | 连通性测试 |
+| GET | /api/models/discover | 按 base_url / Key 拉取模型列表 |
 | POST | /api/new | 开始对局 |
 | POST | /api/move | 人类走子 |
 | POST | /api/say | 人类发言 |
 | POST | /api/resign | 人类认输 |
-| POST | /api/stop | 终止对局 |
-| GET | /api/log | 当前对局的完整日志 |
+| POST | /api/rematch | 再来一局 |
+| POST | /api/stop | 立即停止 |
+| GET | /api/log | 当前对局完整日志 |
 
 ## 项目结构
 
 ```
 xiangqi_duel/
-  coords.py       坐标、九宫、河界的判定
+  coords.py       坐标、九宫、河界判定
   pieces.py       棋子、编号、别名
   board.py        棋盘、FEN、ASCII 渲染
   moves.py        走子生成、攻击判定、perft
   notation.py     中文记谱
   game.py         对局状态、判负与判和
-  tools.py        12 个 LLM 工具的定义与执行
+  tools.py        12 个 LLM 工具
   llm.py          OpenAI 兼容 / Anthropic 客户端
   agent.py        LLM 棋手（独立上下文）与本地引擎棋手
-  arena.py        对局编排、事件流、留言
+  arena.py        对局编排、事件流、留言、和棋
   server.py       HTTP + SSE 服务
   models.py       本地模型库
   viewer.py       单文件 HTML 回放
   cli.py          命令行入口
   web/index.html  前端（单文件，无构建）
-tests/            82 个单元 / 集成测试
+  web/art/        模型立绘素材
+tests/            92 个单元 / 集成测试
 examples/         示例对局与离线回放
 ```
 
@@ -261,32 +232,24 @@ examples/         示例对局与离线回放
 python3 -m unittest discover -s tests -v
 ```
 
-覆盖规则与 perft、记谱、工具、引擎、代理循环（含非法着法重试与立即停止）、
-模型库、对局编排与 HTTP 接口。
-
-CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)：复制到 `.github/workflows/ci.yml` 即可启用
-（当前推送用的 token 没有 Workflows 权限，所以暂时放在 docs/）。
+覆盖规则与 perft、记谱、工具、引擎、代理循环、模型库、对局编排与 HTTP 接口。
+CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)，复制到 `.github/workflows/ci.yml` 即可启用。
 
 ## 示例对局
 
-`examples/demo-game.json` 是内置引擎自战 93 手的完整日志（三次重复判和），
-`examples/demo-replay.html` 是对应的离线回放。
-
-`examples/deepseek-game.json` 是真实 DeepSeek 自战 24 手的日志，
-包含双方的中文思考和全部工具调用；`examples/deepseek-replay.html` 是回放页面。
-
-![DeepSeek 自战（真实 API）](docs/screenshot-llm.png)
+- `examples/demo-game.json`：内置引擎自战 93 手（三次重复判和）及对应回放
+- `examples/deepseek-game.json`：真实 DeepSeek 自战 24 手，含中文思考与全部工具调用及回放
 
 ## English
 
 Xiangqi Duel is a dependency-free Chinese chess game built for LLM agents. Two AIs
-(from any OpenAI-compatible or Anthropic provider) play each other with eleven
-tool calls such as `list_legal_moves("red_horse_1")` and `move(...)`;
-each side keeps its own conversation context and can chat with the opponent via
-`send_message`. A spectator page shows every thought and tool call, while
-human-vs-AI mode hides the AI's internal reasoning. Models live in a local registry,
-so players and providers stay decoupled. An offline alpha-beta engine makes the whole
-pipeline runnable without any API key.
+(any OpenAI-compatible or Anthropic provider) play each other with twelve tools such as
+`list_legal_moves("red_horse_1")` and `move(...)`; each side keeps its own context and
+can chat with the opponent via `send_message`. A spectator page shows every thought and
+tool call, while human-vs-AI hides the AI's internal reasoning. Models live in a local
+registry, and an offline alpha-beta engine makes the whole pipeline runnable without any
+API key. Model illustrations can be enabled in settings and switch to a thinking pose
+while the model is working.
 
 ## License
 
