@@ -233,6 +233,8 @@ python3 -m unittest discover -s tests -v
 `examples/deepseek-game.json` 是真实 DeepSeek 自战 24 手的日志，
 包含双方的中文思考和全部工具调用；`examples/deepseek-replay.html` 是回放页面。
 
+![DeepSeek 自战（真实 API）](docs/screenshot-llm.png)
+
 ## English
 
 Xiangqi Duel is a dependency-free Chinese chess game built for LLM agents. Two AIs

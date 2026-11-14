@@ -336,7 +336,6 @@ class ToolBox:
             "legal_move_count": len(legal),
             "last_move": last,
             "material": game.material(),
-            "piece_id_help": PIECE_ID_HELP,
         }
 
     def _t_list_pieces(self, color="both"):
@@ -390,19 +389,23 @@ class ToolBox:
             moves = self.game.legal_moves(piece.id)
             if not moves:
                 continue
-            details = []
-            for move in moves:
-                captured = board.pieces.get(move.capture_id) if move.capture_id else None
-                details.append(
-                    {
-                        "to": move.to_str,
-                        "ucci": move.ucci,
-                        "notation": move_text(board, move, color),
-                        "capture": captured.id if captured else None,
-                    }
-                )
-            result[piece.id] = details
-            total += len(details)
+            if piece_id is not None:
+                details = []
+                for move in moves:
+                    captured = board.pieces.get(move.capture_id) if move.capture_id else None
+                    details.append(
+                        {
+                            "to": move.to_str,
+                            "ucci": move.ucci,
+                            "notation": move_text(board, move, color),
+                            "capture": captured.id if captured else None,
+                        }
+                    )
+                result[piece.id] = details
+                total += len(details)
+            else:
+                result[piece.id] = [move.to_str for move in moves]
+                total += len(moves)
         return {
             "ok": True,
             "piece_id": piece_id,
@@ -495,8 +498,6 @@ class ToolBox:
             "capture": captured,
             "check": gives_check,
             "turn": other(self.side),
-            "board": preview.ascii(),
-            "fen": preview.to_fen(other(self.side)),
             "note": "着法已接受，本回合结束后生效。",
         }
 

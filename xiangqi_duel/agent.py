@@ -14,7 +14,7 @@ from .pieces import BLACK, COLOR_ZH, RED
 from .tools import ToolBox, tool_specs
 
 MAX_STEPS = 8
-MAX_BLOCKS = 12  # 每个 AI 独立保留的回合块数量
+MAX_BLOCKS = 8  # 每个 AI 独立保留的回合块数量
 
 
 SYSTEM_PROMPT = """你是一名中国象棋高手，正在参加一场正式对弈。你执{color}方。
@@ -164,12 +164,15 @@ class LLMPlayer:
             )
             for call in result.tool_calls:
                 outcome = self.toolbox.call(call.name, call.arguments)
+                content = json.dumps(outcome, ensure_ascii=False)
+                if len(content) > 4000:
+                    content = content[:4000] + "...(truncated)"
                 block.append(
                     {
                         "role": "tool",
                         "tool_call_id": call.id,
                         "name": call.name,
-                        "content": json.dumps(outcome, ensure_ascii=False),
+                        "content": content,
                     }
                 )
                 self.emit(
