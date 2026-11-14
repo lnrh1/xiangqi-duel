@@ -163,6 +163,16 @@ class SimulationToolTest(unittest.TestCase):
         self.assertIsNone(holder.sim)
         self.assertEqual(game.history, [])
 
+    def test_simulation_alternates(self):
+        holder = self.Holder()
+        game = Game()
+        box = ToolBox(game, "red", player=holder)
+        box.call("start_simulation")
+        self.assertTrue(box.call("move", {"piece_id": "red_horse_1", "to": "c2"})["ok"])
+        second = box.call("move", {"piece_id": "red_horse_2", "to": "g3"})
+        self.assertFalse(second["ok"])
+        self.assertTrue(box.call("move", {"piece_id": "black_horse_1", "to": "c7"})["ok"])
+
     def test_end_simulation(self):
         holder = self.Holder()
         game = Game()

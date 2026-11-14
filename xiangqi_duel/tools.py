@@ -191,7 +191,7 @@ def tool_specs(allowed=None):
             "function": {
                 "name": "start_simulation",
                 "description": (
-                    "进入推演棋盘：在虚拟棋盘上可以控制双方棋子试走，最多 8 步；"
+                    "进入推演棋盘：在虚拟棋盘上可以控制双方棋子试走（红黑按正常轮次交替），最多 8 步；"
                     "推演中的 move / list_legal_moves 等自动作用于虚拟棋盘，不影响真实对局。"
                     "注意：频繁推演会明显拖长一局的时间，只在关键局面使用。"
                 ),
@@ -363,7 +363,10 @@ class ToolBox:
         if name == "end_simulation":
             return self._t_end_simulation()
         if self.sim is not None and name == "move":
-            return self._t_sim_move(arguments)
+            try:
+                return self._t_sim_move(arguments)
+            except IllegalMove as exc:
+                return {"ok": False, "error": str(exc)}
         if self.sim is not None and name in SIM_TOOLS:
             saved = self.game
             self.game = self.sim.game
@@ -481,7 +484,7 @@ class ToolBox:
                 "simulation": bool(self.sim),
             }
         if self.sim:
-            pieces = sorted(board.pieces.values(), key=lambda p: p.id)
+            pieces = sorted(board.side_pieces(self.game.turn), key=lambda p: p.id)
         else:
             pieces = sorted(board.side_pieces(self.side), key=lambda p: p.id)
         result = {}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from .coords import square as square_name
 from .game import IllegalMove
 from .moves import in_check
+from .pieces import COLOR_ZH
 
 
 class Simulation:
@@ -17,14 +18,9 @@ class Simulation:
 
     def legal_moves_for(self, piece_id):
         piece = self.game.piece(piece_id)
-        if piece is None:
+        if piece is None or piece.color != self.game.turn:
             return []
-        saved = self.game.turn
-        self.game.turn = piece.color
-        try:
-            return self.game.legal_moves(piece_id)
-        finally:
-            self.game.turn = saved
+        return self.game.legal_moves(piece_id)
 
     def move(self, piece_id, to):
         piece = self.game.piece(piece_id)
@@ -32,13 +28,11 @@ class Simulation:
             raise IllegalMove("推演棋盘上没有 %s" % (piece_id,))
         if self.plies >= self.limit:
             raise IllegalMove("推演已达 %d 步上限" % self.limit)
-        saved = self.game.turn
-        self.game.turn = piece.color
-        try:
-            record = self.game.play(piece_id, to, adjudicate=False)
-        except Exception:
-            self.game.turn = saved
-            raise
+        if piece.color != self.game.turn:
+            raise IllegalMove(
+                "现在轮到%s走棋，不能替%s走" % (COLOR_ZH[self.game.turn], COLOR_ZH[piece.color])
+            )
+        record = self.game.play(piece_id, to, adjudicate=False)
         self.plies += 1
         self.last = record
         return record, self.plies >= self.limit
