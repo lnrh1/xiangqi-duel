@@ -62,9 +62,30 @@
     padding: 10px 26px 40px;
   }
   .layout.spectate {
-    grid-template-columns: minmax(240px, 300px) minmax(320px, 700px) minmax(240px, 300px);
+    grid-template-columns: minmax(240px, 300px) minmax(320px, 660px) minmax(240px, 300px);
   }
-  .layout.human { grid-template-columns: minmax(320px, 780px); }
+  .layout.human {
+    grid-template-columns: minmax(320px, 700px) minmax(300px, 380px);
+  }
+  .side-panel {
+    background: linear-gradient(180deg, var(--panel), #1d1813);
+    border: 1px solid var(--line); border-radius: 18px; padding: 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    width: 100%; max-height: calc(100vh - 120px); overflow-y: auto;
+  }
+  .layout.spectate .side-panel {
+    position: fixed; top: 84px; right: 18px; bottom: 18px;
+    width: min(390px, 92vw); max-height: none; z-index: 40;
+    transform: translateX(112%); transition: transform .25s ease;
+    box-shadow: -12px 0 40px rgba(0, 0, 0, .45);
+  }
+  .layout.spectate .side-panel.open { transform: none; }
+  .drawer-close { display: none; align-self: flex-end; }
+  .layout.spectate .drawer-close { display: inline-block; }
+  .layout.spectate .players { display: none; }
+  .side-panel .pane { min-height: 140px; max-height: 46vh; overflow-y: auto; }
+  .side-panel .moves { max-height: none; }
+  .side-panel .chat { max-height: none; }
   .trace-panel {
     background: linear-gradient(180deg, var(--panel), #1d1813);
     border: 1px solid var(--line); border-radius: 18px; padding: 12px;
@@ -400,6 +421,7 @@
   <div class="top-actions">
     <button id="btn-new" class="btn primary">新对局</button>
     <button id="btn-resign" class="btn hidden">认输</button>
+    <button id="btn-drawer" class="btn hidden">棋谱 / 对话</button>
     <button id="btn-rematch" class="btn hidden">再来一局</button>
     <button id="btn-replay" class="btn">复盘</button>
     <button id="btn-sound" class="btn">音效 关</button>
@@ -437,7 +459,10 @@
       <span class="hint" id="rp-info"></span>
       <button class="btn" id="rp-exit">退出复盘</button>
     </div>
-    <div class="bottom-panel">
+    </section>
+    <aside class="side-panel" id="side-panel">
+      <button class="btn drawer-close" id="drawer-close">收起</button>
+      <div class="players" id="players"></div>
       <div class="tabs">
         <button class="tab active" data-tab="moves">棋谱</button>
         <button class="tab" data-tab="chat">对话</button>
@@ -453,8 +478,8 @@
         <p class="hint" id="chat-hint"></p>
       </div>
       <div id="pane-trace" class="pane"><div class="trace" id="trace-list"></div></div>
-    </div>
-  </section>
+    </aside>
+
 
   <aside class="trace-panel hidden" id="panel-black">
     <div class="panel-head" id="panel-head-black"></div>
@@ -619,6 +644,7 @@
       state.mateShown = false;
       state.lastPly = -1;
       state.pendingMove = false;
+      $('side-panel').classList.remove('open');
     }
     if (state.pendingMove && (snap.ply !== state.pendingPly || snap.turn !== snap.human_side)) {
       state.pendingMove = false;
@@ -643,8 +669,9 @@
     $('layout').classList.toggle('human', !spectate);
     $('panel-red').classList.toggle('hidden', !spectate);
     $('panel-black').classList.toggle('hidden', !spectate);
-    $('players-inline').classList.toggle('hidden', spectate);
+    $('btn-drawer').classList.toggle('hidden', !spectate);
     $('tab-trace').classList.add('hidden');
+    if (!spectate) { $('side-panel').classList.remove('open'); }
     var subtitle = $('subtitle');
     subtitle.textContent = snap.mode === 'human'
       ? '人机对弈 · 你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
@@ -774,9 +801,9 @@
     if (snap.mode === 'aivai') {
       $('panel-head-red').innerHTML = playerCard('red', snap);
       $('panel-head-black').innerHTML = playerCard('black', snap);
-      $('players-inline').innerHTML = '';
+      $('players').innerHTML = '';
     } else {
-      $('players-inline').innerHTML = playerCard('red', snap) + playerCard('black', snap);
+      $('players').innerHTML = playerCard('red', snap) + playerCard('black', snap);
       $('panel-head-red').innerHTML = '';
       $('panel-head-black').innerHTML = '';
     }
@@ -823,10 +850,13 @@
     var side = entry.side === 'red' ? 'red' : 'black';
     var who = entry.side === 'red' ? '红方' : '黑方';
     if (entry.kind === 'thinking') {
-      return '<div class="trace-item ' + side + '"><div class="trace-head">' +
-        '<span class="chip ' + side + '">' + who + '</span>' +
-        '<span class="trace-kind">' + (entry.variant === 'reasoning' ? '推理' : '思路') + '</span></div>' +
-        '<div class="trace-text">' + esc(entry.text) + '</div></div>';
+      var think = entry.text || '';
+      var thinkPreview = think.length > 46 ? think.slice(0, 46) + '…' : think;
+      return '<details class="trace-item ' + side + '">' +
+        '<summary><span class="chip ' + side + '">' + who + '</span>' +
+        '<span class="trace-kind">' + (entry.variant === 'reasoning' ? '推理' : '思路') + '</span>' +
+        '<span class="trace-preview">' + esc(thinkPreview) + '</span></summary>' +
+        '<div class="trace-text">' + esc(think) + '</div></details>';
     }
     if (entry.kind === 'tool_call') {
       var args = '';
@@ -1572,6 +1602,7 @@
         if (!type) { x += 1; continue; }
         var el = document.createElement('div');
         el.className = 'piece ' + color;
+        el.setAttribute('data-square', 'abcdefghi'.charAt(x) + y);
         el.style.left = leftFor(x) + '%';
         el.style.top = topFor(y) + '%';
         var span = document.createElement('span');
@@ -1645,6 +1676,7 @@
     $('replay-bar').classList.remove('hidden');
     $('panel-red').classList.add('hidden');
     $('panel-black').classList.add('hidden');
+    $('side-panel').classList.add('open');
     $('tab-trace').classList.remove('hidden');
     switchTab('trace');
     renderReplay();
@@ -1800,8 +1832,11 @@
     if (!anim || anim.stop) { return; }
     var move = anim.data.move;
     renderPiecesFromFen(anim.data.beforeFen, null);
-    var piece = piecesLayer.querySelector('[data-id="' + move.piece_id + '"]');
+    var piece = piecesLayer.querySelector('[data-square="' + move.from + '"]');
     if (!piece) { restoreHoverBoard(); return; }
+    var capturedEl = move.capture
+      ? piecesLayer.querySelector('[data-square="' + move.to + '"]')
+      : null;
     piece.classList.add('animating');
     var tx = 'abcdefghi'.indexOf(move.to.charAt(0));
     var ty = parseInt(move.to.slice(1), 10);
@@ -1816,10 +1851,7 @@
       anim.running = false;
       anim.arriveTimer = 0;
       piece.classList.remove('animating');
-      if (move.capture) {
-        var captured = piecesLayer.querySelector('[data-id="' + move.capture + '"]');
-        if (captured) { captured.remove(); }
-      }
+      if (capturedEl) { capturedEl.remove(); }
       if (anim.stop) { restoreHoverBoard(); return; }
       anim.loopTimer = setTimeout(function () {
         anim.loopTimer = 0;
@@ -1868,6 +1900,12 @@
       } catch (err) {
         toast(err.message);
       }
+    });
+    $('btn-drawer').addEventListener('click', function () {
+      $('side-panel').classList.toggle('open');
+    });
+    $('drawer-close').addEventListener('click', function () {
+      $('side-panel').classList.remove('open');
     });
     $('btn-replay').addEventListener('click', enterReplay);
     $('rp-first').addEventListener('click', function () {
@@ -2020,6 +2058,7 @@
     if (params.get('setup') === '1') { openSetup(); }
     var wantedTab = params.get('tab');
     if (wantedTab === 'chat' || wantedTab === 'trace') { switchTab(wantedTab); }
+    if (params.get('drawer') === '1') { $('side-panel').classList.add('open'); }
     var hoverParam = params.get('hover');
     if (hoverParam !== null) {
       setTimeout(function () {
