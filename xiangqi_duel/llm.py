@@ -184,10 +184,19 @@ def normalise_usage(usage):
         or 0
     )
     total = usage.get("total_tokens") or (input_tokens + output_tokens)
+    details = usage.get("prompt_tokens_details") or {}
+    cached_tokens = (
+        (details.get("cached_tokens") if isinstance(details, dict) else 0)
+        or usage.get("cached_tokens")
+        or usage.get("prompt_cache_hit_tokens")
+        or usage.get("cache_read_input_tokens")
+        or 0
+    )
     return {
         "input": int(input_tokens or 0),
         "output": int(output_tokens or 0),
         "total": int(total or 0),
+        "cached": int(cached_tokens or 0),
     }
 
 

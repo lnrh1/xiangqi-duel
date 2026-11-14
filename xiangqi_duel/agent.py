@@ -66,6 +66,7 @@ class AgentDecision:
     fallback: bool = False
     resign_reason: str = ""
     draw_offer: object = None
+    context_tokens: int = 0
 
 
 def side_zh(color):
@@ -101,7 +102,8 @@ class LLMPlayer:
         self.notes = []
         self.blocks = []
         self.inbox = queue.Queue()
-        self.usage_total = {"input": 0, "output": 0, "total": 0}
+        self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
+        self.context_tokens = 0
         self.turns = 0
         self.toolbox = None
         self._delta_parts = []
@@ -364,10 +366,13 @@ class LLMPlayer:
     def _merge_usage(self, usage):
         for key in ("input", "output", "total"):
             self.usage_total[key] = self.usage_total.get(key, 0) + usage.get(key, 0)
+        if usage.get("input"):
+            self.context_tokens = int(usage.get("input") or 0)
 
     def _decision(self, **kwargs):
         kwargs.setdefault("messages", list(self.toolbox.outbox))
         kwargs.setdefault("usage", dict(self.usage_total))
+        kwargs.setdefault("context_tokens", self.context_tokens)
         kwargs.setdefault("draw_offer", self.toolbox.draw_offer)
         return AgentDecision(**kwargs)
 
@@ -378,6 +383,21 @@ class LLMPlayer:
             resign_reason=error or "模型未能给出着法",
             error=error,
         )
+
+
+    def reset_for_new_game(self, side=None):
+        while True:
+            try:
+                self.inbox.get_nowait()
+            except queue.Empty:
+                break
+        self.blocks = []
+        self.notes = []
+        self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
+        self.context_tokens = 0
+        self._cancelled = False
+        self._delta_parts = []
+        self._last_text = ""
 
 
 class EnginePlayer:
@@ -393,7 +413,8 @@ class EnginePlayer:
         self.emit = emit or (lambda event: None)
         self.label = label or "本地引擎（深度 %d）" % depth
         self.inbox = queue.Queue()
-        self.usage_total = {"input": 0, "output": 0, "total": 0}
+        self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
+        self.context_tokens = 0
 
     def reset_for_new_game(self, side=None):
         while True:

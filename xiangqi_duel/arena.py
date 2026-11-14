@@ -151,7 +151,10 @@ class Match:
         self.started_at = time.time()
         self.finished_at = None
         self.errors = []
-        self.usage = {RED: {"input": 0, "output": 0, "total": 0}, BLACK: {"input": 0, "output": 0, "total": 0}}
+        self.usage = {
+            RED: {"input": 0, "output": 0, "total": 0, "cached": 0, "context": 0},
+            BLACK: {"input": 0, "output": 0, "total": 0, "cached": 0, "context": 0},
+        }
         self.players = {}
         specs = {RED: red_spec, BLACK: black_spec}
         for color in (RED, BLACK):
@@ -302,8 +305,9 @@ class Match:
                         break
                     self._deliver_messages(side, decision.messages)
                     with self.lock:
-                        for key in ("input", "output", "total"):
+                        for key in ("input", "output", "total", "cached"):
                             self.usage[side][key] += decision.usage.get(key, 0)
+                        self.usage[side]["context"] = decision.context_tokens or decision.usage.get("input", 0)
                     if self.stop_event.is_set():
                         break
                     with self.lock:

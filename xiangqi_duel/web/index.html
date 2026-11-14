@@ -113,6 +113,28 @@
     pointer-events: none;
   }
   .art-stage.on { display: flex; }
+  .art-stage { pointer-events: auto; cursor: pointer; }
+  .art-stage img { pointer-events: none; }
+  .art-info {
+    align-self: center;
+    text-align: center; font-size: 11px; color: var(--muted);
+    letter-spacing: 0; pointer-events: none; white-space: nowrap;
+    padding: 4px 10px; margin: 6px 0 2px;
+    width: max-content; max-width: 92vw;
+    background: rgba(18, 14, 10, .82);
+    border: 1px solid rgba(217, 164, 65, .26);
+    border-radius: 8px;
+  }
+  .art-info b { color: var(--text); font-weight: 600; }
+  .art-info.hidden { display: none; }
+  .human-stage {
+    position: fixed; right: 22px; bottom: 48px; width: 320px; height: 290px;
+    z-index: 5; display: none;
+  }
+  .human-stage.on { display: flex; }
+  .human-info {
+    position: fixed; right: 22px; bottom: 12px; width: auto; z-index: 6;
+  }
   .art-stage img {
     max-height: 100%; max-width: 100%; width: auto; object-fit: contain;
     filter: drop-shadow(0 14px 32px rgba(0, 0, 0, .55));
@@ -588,6 +610,7 @@
       <div class="trace" id="trace-list-red"></div>
     </aside>
     <div class="art-stage" id="art-stage-red"></div>
+    <div class="art-info hidden" id="art-info-red"></div>
   </aside>
 
   <section class="board-panel">
@@ -642,7 +665,11 @@
       <div class="trace" id="trace-list-black"></div>
     </aside>
     <div class="art-stage" id="art-stage-black"></div>
+    <div class="art-info hidden" id="art-info-black"></div>
   </aside>
+
+  <div class="art-stage human-stage" id="art-stage-human"></div>
+  <div class="art-info human-info hidden" id="art-info-human"></div>
 </main>
 
 <div class="fx-layer" id="fx-layer">
@@ -908,6 +935,10 @@
     renderStatus(snap);
     renderPlayers(snap);
     renderArtStages(snap);
+    ['red', 'black', 'human'].forEach(function (key) {
+      var box = $('art-info-' + key);
+      if (box && !box.classList.contains('hidden')) { renderArtInfo(key); }
+    });
     renderMoves(snap);
     renderChat(snap);
     renderTrace(snap);
@@ -1082,13 +1113,57 @@
       kind = info.provider + (model && model !== title ? ' · ' + model : '');
     }
     var active = snap.status === 'playing' && snap.turn === side ? ' active' : '';
-    var usage = (snap.usage || {})[side] || {};
-    var tokens = (usage.input || 0) + (usage.output || 0);
     return '<div class="player ' + side + active + '">' +
       '<div class="avatar">' + (side === 'red' ? '帥' : '將') + '</div>' +
       '<div class="meta"><strong>' + esc(title) + '</strong><span>' + esc(kind) + '</span></div>' +
-      '<div class="usage">' + (tokens ? tokens + ' tokens' : '') + '</div>' +
       '</div>';
+  }
+
+  var artInfoTimers = { red: 0, black: 0, human: 0 };
+
+  function formatTokens(value) {
+    var number = Number(value) || 0;
+    if (number >= 1000000) { return (number / 1000000).toFixed(2) + "M"; }
+    if (number >= 1000) { return (number / 1000).toFixed(1) + "k"; }
+    return String(number);
+  }
+
+  function artUsageSide(key) {
+    var snap = state.snapshot;
+    if (!snap) { return null; }
+    if (key === "human") {
+      return snap.human_side === "red" ? "black" : "red";
+    }
+    return key;
+  }
+
+  function renderArtInfo(key) {
+    var box = $("art-info-" + key);
+    if (!box) { return; }
+    var snap = state.snapshot;
+    var side = artUsageSide(key);
+    var usage = (snap && snap.usage && side) ? (snap.usage[side] || {}) : {};
+    box.innerHTML = "总输入 <b>" + formatTokens(usage.input) + "</b>" +
+      " · 缓存命中 <b>" + formatTokens(usage.cached) + "</b>" +
+      " · 总输出 <b>" + formatTokens(usage.output) + "</b>" +
+      " · 当前上下文 <b>" + formatTokens(usage.context) + "</b>";
+  }
+
+  function showArtInfo(key) {
+    var box = $("art-info-" + key);
+    if (!box) { return; }
+    renderArtInfo(key);
+    box.classList.remove("hidden");
+    clearTimeout(artInfoTimers[key]);
+    artInfoTimers[key] = setTimeout(function () {
+      box.classList.add("hidden");
+    }, 3000);
+  }
+
+  function hideArtInfo(key) {
+    var box = $("art-info-" + key);
+    if (box) { box.classList.add("hidden"); }
+    clearTimeout(artInfoTimers[key]);
   }
 
   function renderArtStages(snap) {
@@ -1101,6 +1176,7 @@
       if (!art || !live) {
         stage.classList.remove('on');
         stage.innerHTML = '';
+        hideArtInfo(side);
         return;
       }
       var busy = (info.kind === 'model' || info.kind === 'llm') &&
@@ -1109,6 +1185,28 @@
       stage.classList.add('on');
       stage.classList.toggle('flip', side === 'black');
     });
+
+    var humanStage = $('art-stage-human');
+    if (!humanStage) { return; }
+    var humanArt = null;
+    var humanSide = null;
+    if (snap && snap.mode === 'human' && state.artEnabled) {
+      humanSide = snap.human_side === 'red' ? 'black' : 'red';
+      humanArt = artInfo(snap.players ? snap.players[humanSide] : null);
+    }
+    var showHuman = humanArt && !(state.replay && state.replay.active);
+    if (!showHuman) {
+      humanStage.classList.remove('on');
+      humanStage.innerHTML = '';
+      hideArtInfo('human');
+      return;
+    }
+    var humanInfo = snap.players[humanSide];
+    var humanBusy = (humanInfo.kind === 'model' || humanInfo.kind === 'llm') &&
+      snap.status === 'playing' && snap.turn === humanSide;
+    humanStage.innerHTML = '<img src="' + (humanBusy ? humanArt.thinking : humanArt.normal) + '" alt="">';
+    humanStage.classList.add('on');
+    humanStage.classList.toggle('flip', humanSide === 'black');
   }
 
   function renderPlayers(snap) {
@@ -2476,6 +2574,9 @@
   // --------------------------------------------------------------------- init
   function bindEvents() {
     $('btn-rematch').addEventListener('click', async function () {
+      stopHoverAnimation(true);
+      state.selected = null;
+      state.pendingMove = false;
       if (state.replay && state.replay.active) {
         state.replay.active = false;
         $('replay-bar').classList.add('hidden');
@@ -2558,6 +2659,10 @@
     });
     $('lobby-start').addEventListener('click', startFromLobby);
     $('tool-toggles').addEventListener('change', collectTools);
+    ['red', 'black', 'human'].forEach(function (key) {
+      var stage = $('art-stage-' + key);
+      if (stage) { stage.addEventListener('click', function () { showArtInfo(key); }); }
+    });
     $('art-toggle').addEventListener('change', function () {
       state.artEnabled = $('art-toggle').checked;
       try { localStorage.setItem('xiangqi.art', state.artEnabled ? '1' : '0'); } catch (err) {}
@@ -2701,6 +2806,10 @@
       }
     } else if (screenParam === 'settings') {
       openSettings();
+    }
+    var artClick = screenParams.get('artclick');
+    if (artClick) {
+      setTimeout(function () { showArtInfo(artClick); }, 1200);
     }
     if (screenParams.get('artdemo') === '1') {
       openLobby('aivai');
