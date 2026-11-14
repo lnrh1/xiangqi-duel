@@ -89,3 +89,81 @@ class ProviderConfigTest(unittest.TestCase):
             llm.ProviderConfig(provider="nope").resolved()
         config = llm.ProviderConfig(provider="nope", base_url="http://localhost:1234/v1").resolved()
         self.assertEqual(config.base_url, "http://localhost:1234/v1")
+
+
+class StreamingTest(unittest.TestCase):
+    def test_openai_stream_assembly(self):
+        from xiangqi_duel import llm
+        import json as _json
+
+        arguments = _json.dumps({"piece_id": "red_horse_1", "to": "c2"})
+        half = len(arguments) // 2
+        events = [
+            {"choices": [{"delta": {"content": "你"}}]},
+            {"choices": [{"delta": {"content": "好"}}]},
+            {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "c1", "function": {"name": "move", "arguments": arguments[:half]}}]}}]},
+            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": arguments[half:]}}]}}]},
+            {"usage": {"prompt_tokens": 10, "completion_tokens": 5}, "choices": []},
+        ]
+
+        def fake_stream(url, payload, headers, timeout, on_event, attempts=2):
+            for event in events:
+                on_event(event)
+
+        original = llm._stream_events
+        llm._stream_events = fake_stream
+        try:
+            config = llm.ProviderConfig(provider="deepseek", api_key="k").resolved()
+            client = llm.make_client(config)
+            deltas = []
+            result = client.chat(
+                "s",
+                [{"role": "user", "content": "hi"}],
+                tools=[],
+                on_delta=lambda kind, text: deltas.append((kind, text)),
+            )
+        finally:
+            llm._stream_events = original
+
+        self.assertEqual(result.text, "你好")
+        self.assertEqual(result.tool_calls[0].name, "move")
+        self.assertEqual(result.tool_calls[0].arguments["to"], "c2")
+        self.assertEqual(deltas[0], ("text", "你"))
+        self.assertEqual(result.usage["input"], 10)
+
+    def test_anthropic_stream_assembly(self):
+        from xiangqi_duel import llm
+
+        events = [
+            {"type": "message_start", "message": {"usage": {"input_tokens": 8, "output_tokens": 0}}},
+            {"type": "content_block_start", "index": 0, "content_block": {"type": "text"}},
+            {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "好的"}},
+            {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "t1", "name": "get_board"}},
+            {"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": "{}"}},
+            {"type": "message_delta", "usage": {"output_tokens": 4}},
+        ]
+
+        def fake_stream(url, payload, headers, timeout, on_event, attempts=2):
+            for event in events:
+                on_event(event)
+
+        original = llm._stream_events
+        llm._stream_events = fake_stream
+        try:
+            config = llm.ProviderConfig(
+                provider="anthropic", model="claude-x", api_key="k"
+            ).resolved()
+            client = llm.make_client(config)
+            deltas = []
+            result = client.chat(
+                "s",
+                [{"role": "user", "content": "hi"}],
+                on_delta=lambda kind, text: deltas.append((kind, text)),
+            )
+        finally:
+            llm._stream_events = original
+
+        self.assertEqual(result.text, "好的")
+        self.assertEqual(result.tool_calls[0].name, "get_board")
+        self.assertEqual(deltas[0], ("text", "好的"))
+        self.assertEqual(result.usage["input"], 8)

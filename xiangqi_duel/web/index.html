@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>象棋对弈 · Xiangqi Duel</title>
 <style>
   :root {
@@ -57,10 +58,52 @@
   .btn.big { padding: 12px 26px; font-size: 16px; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .layout {
-    display: grid; grid-template-columns: minmax(320px, 640px) minmax(300px, 420px);
-    gap: 26px; justify-content: center; align-items: start;
+    display: grid; gap: 26px; justify-content: center; align-items: start;
     padding: 10px 26px 40px;
   }
+  .layout.spectate {
+    grid-template-columns: minmax(240px, 300px) minmax(320px, 700px) minmax(240px, 300px);
+  }
+  .layout.human { grid-template-columns: minmax(320px, 780px); }
+  .trace-panel {
+    background: linear-gradient(180deg, var(--panel), #1d1813);
+    border: 1px solid var(--line); border-radius: 18px; padding: 12px;
+    display: flex; flex-direction: column; gap: 10px; height: min(68vh, 660px);
+  }
+  .trace-panel.hidden { display: none; }
+  .panel-head .player { width: 100%; }
+  .trace-panel .trace { flex: 1; overflow-y: auto; max-height: none; }
+  .players-inline { display: flex; gap: 10px; width: min(66vh, 100%); }
+  .players-inline.hidden { display: none; }
+  .bottom-panel {
+    width: min(66vh, 100%); background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px;
+  }
+  .bottom-panel .tabs { margin-bottom: 6px; }
+  .bottom-panel .pane { min-height: 120px; max-height: 230px; overflow-y: auto; }
+  .bottom-panel .moves { max-height: none; }
+  .bottom-panel .chat { max-height: none; }
+  .trace-panel .player { padding: 10px 12px; }
+  details.trace-item summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  }
+  details.trace-item summary::-webkit-details-marker { display: none; }
+  details.trace-item summary::before { content: "▸"; color: var(--muted); font-size: 11px; }
+  details.trace-item[open] summary::before { content: "▾"; }
+  .trace-preview {
+    color: var(--muted); font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  }
+  .trace-item.live { border-left-color: var(--accent); }
+  .trace-item.live .trace-text::after { content: "▍"; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  * { scrollbar-width: thin; scrollbar-color: #4a3c2c #1b1510; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: #17120d; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb {
+    background: #4a3c2c; border-radius: 8px; border: 2px solid #17120d;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #6b573f; }
   .board-panel { display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .board {
     position: relative; width: min(66vh, 100%); aspect-ratio: 8 / 9;
@@ -360,8 +403,14 @@
   </div>
 </header>
 
-<main class="layout">
+<main class="layout" id="layout">
+  <aside class="trace-panel hidden" id="panel-red">
+    <div class="panel-head" id="panel-head-red"></div>
+    <div class="trace" id="trace-list-red"></div>
+  </aside>
+
   <section class="board-panel">
+    <div class="players-inline hidden" id="players-inline"></div>
     <div class="board" id="board">
       <div class="grid" id="grid">
         <svg id="board-svg" viewBox="0 0 8 9" preserveAspectRatio="none"></svg>
@@ -384,25 +433,28 @@
       <span class="hint" id="rp-info"></span>
       <button class="btn" id="rp-exit">退出复盘</button>
     </div>
+    <div class="bottom-panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="moves">棋谱</button>
+        <button class="tab" data-tab="chat">对话</button>
+        <button class="tab hidden" data-tab="trace" id="tab-trace">思考 / 工具</button>
+      </div>
+      <div id="pane-moves" class="pane active"><ol class="moves" id="move-list"></ol></div>
+      <div id="pane-chat" class="pane">
+        <div class="chat" id="chat-list"></div>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" placeholder="对 AI 说点什么…" autocomplete="off">
+          <button class="btn primary" type="submit">发送</button>
+        </form>
+        <p class="hint" id="chat-hint"></p>
+      </div>
+      <div id="pane-trace" class="pane"><div class="trace" id="trace-list"></div></div>
+    </div>
   </section>
 
-  <aside class="side">
-    <div class="players" id="players"></div>
-    <div class="tabs">
-      <button class="tab active" data-tab="moves">棋谱</button>
-      <button class="tab" data-tab="chat">对话</button>
-      <button class="tab" data-tab="trace" id="tab-trace">思考 / 工具</button>
-    </div>
-    <div id="pane-moves" class="pane active"><ol class="moves" id="move-list"></ol></div>
-    <div id="pane-chat" class="pane">
-      <div class="chat" id="chat-list"></div>
-      <form class="chat-form" id="chat-form">
-        <input id="chat-input" placeholder="对 AI 说点什么…" autocomplete="off">
-        <button class="btn primary" type="submit">发送</button>
-      </form>
-      <p class="hint" id="chat-hint"></p>
-    </div>
-    <div id="pane-trace" class="pane"><div class="trace" id="trace-list"></div></div>
+  <aside class="trace-panel hidden" id="panel-black">
+    <div class="panel-head" id="panel-head-black"></div>
+    <div class="trace" id="trace-list-black"></div>
   </aside>
 </main>
 
@@ -577,6 +629,13 @@
     var finished = snap.status === 'finished';
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-rematch').classList.toggle('hidden', !finished);
+    var spectate = snap.mode !== 'human';
+    $('layout').classList.toggle('spectate', spectate);
+    $('layout').classList.toggle('human', !spectate);
+    $('panel-red').classList.toggle('hidden', !spectate);
+    $('panel-black').classList.toggle('hidden', !spectate);
+    $('players-inline').classList.toggle('hidden', spectate);
+    $('tab-trace').classList.add('hidden');
     var subtitle = $('subtitle');
     subtitle.textContent = snap.mode === 'human'
       ? '人机对弈 · 你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
@@ -677,25 +736,41 @@
     }
   }
 
+  function playerCard(side, snap) {
+    var info = (snap.players || {})[side] || {};
+    var label = info.label || (side === 'red' ? '红方' : '黑方');
+    var title = label;
+    var kind = '';
+    if (info.kind === 'human') {
+      kind = '人类棋手';
+    } else if (info.kind === 'engine') {
+      kind = '离线 alpha-beta 引擎 · 深度 ' + (info.depth || 3);
+    } else {
+      var model = info.model || '';
+      var auto = info.provider + ' · ' + model;
+      title = model && label === auto ? model : label;
+      kind = info.provider + (model && model !== title ? ' · ' + model : '');
+    }
+    var active = snap.status === 'playing' && snap.turn === side ? ' active' : '';
+    var usage = (snap.usage || {})[side] || {};
+    var tokens = (usage.input || 0) + (usage.output || 0);
+    return '<div class="player ' + side + active + '">' +
+      '<div class="avatar">' + (side === 'red' ? '帥' : '將') + '</div>' +
+      '<div class="meta"><strong>' + esc(title) + '</strong><span>' + esc(kind) + '</span></div>' +
+      '<div class="usage">' + (tokens ? tokens + ' tokens' : '') + '</div>' +
+      '</div>';
+  }
+
   function renderPlayers(snap) {
-    var html = '';
-    ['red', 'black'].forEach(function (side) {
-      var info = (snap.players || {})[side] || {};
-      var label = info.label || (side === 'red' ? '红方' : '黑方');
-      var kind;
-      if (info.kind === 'human') { kind = '人类棋手'; }
-      else if (info.kind === 'engine') { kind = '离线 alpha-beta 引擎 · 深度 ' + (info.depth || 3); }
-      else { kind = info.provider + ' · ' + info.model; }
-      var active = snap.status === 'playing' && snap.turn === side ? ' active' : '';
-      var usage = (snap.usage || {})[side] || {};
-      var tokens = (usage.input || 0) + (usage.output || 0);
-      html += '<div class="player ' + side + active + '">' +
-        '<div class="avatar">' + (side === 'red' ? '帥' : '將') + '</div>' +
-        '<div class="meta"><strong>' + esc(label) + '</strong><span>' + esc(kind) + '</span></div>' +
-        '<div class="usage">' + (tokens ? tokens + ' tokens' : '') + '</div>' +
-        '</div>';
-    });
-    $('players').innerHTML = html;
+    if (snap.mode === 'aivai') {
+      $('panel-head-red').innerHTML = playerCard('red', snap);
+      $('panel-head-black').innerHTML = playerCard('black', snap);
+      $('players-inline').innerHTML = '';
+    } else {
+      $('players-inline').innerHTML = playerCard('red', snap) + playerCard('black', snap);
+      $('panel-head-red').innerHTML = '';
+      $('panel-head-black').innerHTML = '';
+    }
   }
 
   function sideLabel(side) {
@@ -747,11 +822,14 @@
     if (entry.kind === 'tool_call') {
       var args = '';
       try { args = JSON.stringify(entry.arguments || {}); } catch (err) { args = ''; }
-      return '<div class="trace-item ' + side + '"><div class="trace-head">' +
-        '<span class="chip ' + side + '">' + who + '</span>' +
-        '<span class="trace-kind tool">' + esc(entry.name) + '</span></div>' +
+      var preview = args.length > 64 ? args.slice(0, 64) + '…' : args;
+      return '<details class="trace-item tool ' + side + '">' +
+        '<summary><span class="chip ' + side + '">' + who + '</span>' +
+        '<span class="trace-kind tool">' + esc(entry.name) + '</span>' +
+        '<span class="trace-preview mono">' + esc(preview) + '</span></summary>' +
         '<div class="trace-text mono">' + esc(args) + '</div>' +
-        (entry.result ? '<div class="trace-result mono">' + esc(entry.result) + '</div>' : '') + '</div>';
+        (entry.result ? '<div class="trace-result mono">' + esc(entry.result) + '</div>' : '') +
+        '</details>';
     }
     if (entry.kind === 'error') {
       return '<div class="trace-item error"><div class="trace-head"><span class="trace-kind">错误</span></div>' +
@@ -760,26 +838,67 @@
     return '';
   }
 
+  function traceTargets(snap) {
+    if (snap && snap.mode === 'aivai' && !state.replay.active) {
+      return { red: $('trace-list-red'), black: $('trace-list-black') };
+    }
+    return { all: $('trace-list') };
+  }
+
   function renderTrace(snap) {
-    var list = $('trace-list');
+    var targets = traceTargets(snap);
     var entries = (snap.trace || []).filter(function (e) { return e.kind !== 'llm_step'; });
+    var keys = Object.keys(targets);
+    keys.forEach(function (key) { targets[key].innerHTML = ''; });
     if (!entries.length) {
-      list.innerHTML = '<p class="empty">' + (snap.mode === 'human' ? '人机对弈中，AI 的思考与工具调用对你不可见。' : '等待 AI 落子…') + '</p>';
+      var empty = '<p class="empty">' + (snap.mode === 'human' ? '人机对弈中，AI 的思考与工具调用对你不可见。' : '等待 AI 落子…') + '</p>';
+      keys.forEach(function (key) { targets[key].innerHTML = empty; });
       return;
     }
-    list.innerHTML = entries.map(traceItemHtml).join('');
-    list.scrollTop = list.scrollHeight;
+    var buckets = { all: '' };
+    if (targets.red) { buckets.red = ''; buckets.black = ''; }
+    entries.forEach(function (entry) {
+      var html = traceItemHtml(entry);
+      if (targets.red) {
+        buckets[entry.side === 'red' ? 'red' : 'black'] += html;
+      } else {
+        buckets.all += html;
+      }
+    });
+    keys.forEach(function (key) {
+      targets[key].innerHTML = buckets[key];
+      targets[key].scrollTop = targets[key].scrollHeight;
+    });
   }
 
   function addTrace(entry) {
     var snap = state.snapshot;
     if (!snap || snap.mode !== 'aivai') { return; }
     snap.trace = snap.trace || [];
-    var exists = snap.trace.some(function (e) { return e.id === entry.id; });
-    if (exists) { return; }
+    if (snap.trace.some(function (e) { return e.id === entry.id; })) { return; }
     snap.trace.push(entry);
     if (snap.trace.length > 200) { snap.trace.shift(); }
-    renderTrace(snap);
+    var host = entry.side === 'red' ? $('trace-list-red') : $('trace-list-black');
+    var live = host.querySelector('.trace-item.live');
+    if (live) { live.remove(); }
+    host.insertAdjacentHTML('beforeend', traceItemHtml(entry));
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function applyThinkingDelta(event) {
+    if (!state.snapshot || state.snapshot.mode !== 'aivai') { return; }
+    var host = event.side === 'red' ? $('trace-list-red') : $('trace-list-black');
+    var bubble = host.querySelector('.trace-item.live');
+    if (!bubble) {
+      bubble = document.createElement('div');
+      bubble.className = 'trace-item live ' + event.side;
+      bubble.innerHTML = '<div class="trace-head"><span class="chip ' + event.side + '">' +
+        (event.side === 'red' ? '红方' : '黑方') +
+        '</span><span class="trace-kind">思考中…</span></div><div class="trace-text"></div>';
+      host.appendChild(bubble);
+    }
+    bubble.querySelector('.trace-text').textContent += event.text;
+    host.scrollTop = host.scrollHeight;
   }
 
   // ---------------------------------------------------------------- human moves
@@ -938,6 +1057,7 @@
       try { data = JSON.parse(event.data); } catch (err) { return; }
       if (data.type === 'state' && data.snapshot) { applySnapshot(data.snapshot); }
       else if (data.type === 'trace' && data.entry) { addTrace(data.entry); }
+      else if (data.type === 'thinking_delta') { applyThinkingDelta(data); }
       else if (data.type === 'end' && data.snapshot) { applySnapshot(data.snapshot); }
     };
   }
@@ -1465,7 +1585,6 @@
   }
 
   function buildReplayTimeline(log) {
-    var timeline = [{ type: 'start', fen: log.start_fen }];
     var byPly = {};
     var chatsByPly = {};
     (log.trace || []).forEach(function (entry) {
@@ -1477,24 +1596,24 @@
       var ply = message.ply || 0;
       (chatsByPly[ply] = chatsByPly[ply] || []).push(message);
     });
+    var steps = [{ type: 'start', fen: log.start_fen }];
     (log.moves || []).forEach(function (move) {
-      (chatsByPly[move.ply] || []).forEach(function (message) {
-        timeline.push({ type: 'chat', message: message });
+      steps.push({
+        type: 'step',
+        move: move,
+        traces: byPly[move.ply] || [],
+        chats: chatsByPly[move.ply] || []
       });
-      (byPly[move.ply] || []).forEach(function (entry) {
-        timeline.push({ type: 'trace', entry: entry });
-      });
-      timeline.push({ type: 'move', move: move });
     });
     var moveCount = (log.moves || []).length;
+    var leftovers = [];
     Object.keys(chatsByPly).map(Number).sort(function (a, b) { return a - b; }).forEach(function (ply) {
-      if (ply > moveCount) {
-        chatsByPly[ply].forEach(function (message) {
-          timeline.push({ type: 'chat', message: message });
-        });
-      }
+      if (ply > moveCount) { leftovers = leftovers.concat(chatsByPly[ply]); }
     });
-    return timeline;
+    if (leftovers.length && steps.length > 1) {
+      steps[steps.length - 1].chats = steps[steps.length - 1].chats.concat(leftovers);
+    }
+    return steps;
   }
 
   async function enterReplay() {
@@ -1512,6 +1631,9 @@
     state.replay = { active: true, log: log, timeline: buildReplayTimeline(log), index: 0 };
     state.selected = null;
     $('replay-bar').classList.remove('hidden');
+    $('panel-red').classList.add('hidden');
+    $('panel-black').classList.add('hidden');
+    $('tab-trace').classList.remove('hidden');
     switchTab('trace');
     renderReplay();
   }
@@ -1520,6 +1642,11 @@
     if (!state.replay || !state.replay.active) { return; }
     state.replay.active = false;
     $('replay-bar').classList.add('hidden');
+    $('tab-trace').classList.add('hidden');
+    if (state.snapshot && state.snapshot.mode === 'aivai') {
+      $('panel-red').classList.remove('hidden');
+      $('panel-black').classList.remove('hidden');
+    }
     refreshState();
   }
 
@@ -1547,26 +1674,21 @@
     var shown = [];
     var shownChats = [];
     for (var i = 0; i <= rp.index && i < rp.timeline.length; i += 1) {
-      var item = rp.timeline[i];
-      if (item.type === 'move') {
-        fen = item.move.fen;
-        lastMove = item.move;
-        ply = item.move.ply;
-      } else if (item.type === 'trace') {
-        shown.push(item.entry);
-      } else if (item.type === 'chat') {
-        shownChats.push(item.message);
+      var step = rp.timeline[i];
+      if (step.type === 'step') {
+        fen = step.move.fen;
+        lastMove = step.move;
+        ply = step.move.ply;
+        shown = shown.concat(step.traces);
+        shownChats = shownChats.concat(step.chats);
       }
     }
     renderPiecesFromFen(fen, lastMove);
     renderReplayTrace(shown);
     renderReplayChat(shownChats);
     renderReplayMoves(ply);
-    var current = rp.timeline[rp.index];
-    if (current && current.type === 'chat') { switchTab('chat'); }
-    else if (current && current.type === 'trace') { switchTab('trace'); }
     var info = rp.index === 0 ? '开局' : ('第 ' + ply + ' 手 / 共 ' + rp.log.moves.length + ' 手');
-    $('rp-info').textContent = info + ' · 步骤 ' + rp.index + ' / ' + (rp.timeline.length - 1);
+    $('rp-info').textContent = info + ' · 第 ' + rp.index + ' / ' + (rp.timeline.length - 1) + ' 步';
     $('turn-text').textContent = '复盘：' + info;
     $('check-text').textContent = '';
     $('material-text').textContent = '';

@@ -182,6 +182,10 @@ class Match:
     def _agent_event(self, event):
         event = dict(event)
         event.setdefault("at", time.time())
+        if event.get("type") == "thinking_delta":
+            if self.mode == "aivai":
+                self._broadcast(event)
+            return
         if event.get("type") in TRACE_TYPES:
             entry = self._record_trace(event)
             if self.mode == "aivai":

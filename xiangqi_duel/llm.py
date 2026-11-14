@@ -193,10 +193,55 @@ def _request_json(url, payload, headers, timeout, attempts=3):
     raise last_error or LLMError("request failed")
 
 
+def _stream_events(url, payload, headers, timeout, on_event, attempts=2):
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = dict(headers)
+    headers["Accept"] = "text/event-stream"
+    last_error = None
+    for attempt in range(attempts):
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                for raw in response:
+                    line = raw.decode("utf-8", "replace").strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        event = json.loads(data)
+                    except ValueError:
+                        continue
+                    on_event(event)
+                return
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+            last_error = LLMError(
+                "HTTP %s from %s: %s" % (exc.code, url, detail),
+                status=exc.code,
+                body=detail,
+            )
+            if exc.code in RETRY_STATUS and attempt < attempts - 1:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise last_error
+        except (urllib.error.URLError, socket.timeout, TimeoutError) as exc:
+            last_error = LLMError("cannot reach %s: %s" % (url, exc))
+            if attempt < attempts - 1:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise last_error
+    raise last_error or LLMError("stream failed")
+
+
 class OpenAIClient:
     """Client for any OpenAI-compatible /chat/completions endpoint."""
 
     kind = "openai"
+    supports_streaming = True
 
     def __init__(self, config):
         self.config = config
@@ -212,7 +257,7 @@ class OpenAIClient:
             headers["X-Title"] = "xiangqi-duel"
         return headers
 
-    def chat(self, system, messages, tools=None):
+    def chat(self, system, messages, tools=None, on_delta=None):
         payload = {
             "model": self.config.model,
             "messages": [{"role": "system", "content": system}] + _to_openai_messages(messages),
@@ -224,6 +269,11 @@ class OpenAIClient:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         url = self.base_url + "/chat/completions"
+        if on_delta is not None:
+            try:
+                return self._stream(url, payload, on_delta)
+            except LLMError:
+                pass
         data = _request_json(
             url, payload, self._headers(), self.config.timeout
         )
@@ -255,10 +305,68 @@ class OpenAIClient:
         )
 
 
+    def _stream(self, url, payload, on_delta):
+        payload = dict(payload)
+        payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
+        text_parts = []
+        reasoning_parts = []
+        calls = {}
+        usage = {}
+
+        def handle(event):
+            if event.get("usage"):
+                for key, value in normalise_usage(event["usage"]).items():
+                    if value:
+                        usage[key] = value
+            for choice in event.get("choices") or []:
+                delta = choice.get("delta") or {}
+                if delta.get("reasoning_content"):
+                    reasoning_parts.append(delta["reasoning_content"])
+                    on_delta("reasoning", delta["reasoning_content"])
+                if delta.get("content"):
+                    text_parts.append(delta["content"])
+                    on_delta("text", delta["content"])
+                for tool_call in delta.get("tool_calls") or []:
+                    index = tool_call.get("index", 0)
+                    slot = calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                    if tool_call.get("id"):
+                        slot["id"] = tool_call["id"]
+                    function = tool_call.get("function") or {}
+                    if function.get("name"):
+                        slot["name"] += function["name"]
+                    if function.get("arguments"):
+                        slot["arguments"] += function["arguments"]
+
+        _stream_events(url, payload, self._headers(), self.config.timeout, handle)
+        tool_calls = []
+        for index in sorted(calls):
+            slot = calls[index]
+            raw_arguments = slot["arguments"]
+            try:
+                arguments = json.loads(raw_arguments) if raw_arguments else {}
+            except ValueError:
+                arguments = raw_arguments or {}
+            tool_calls.append(
+                ToolCall(
+                    id=slot["id"] or "call_%d" % index,
+                    name=slot["name"],
+                    arguments=arguments,
+                )
+            )
+        return ChatResult(
+            text="".join(text_parts).strip(),
+            reasoning="".join(reasoning_parts).strip(),
+            tool_calls=tool_calls,
+            usage=usage or {},
+            raw={},
+        )
+
 class AnthropicClient:
     """Client for the Anthropic Messages API."""
 
     kind = "anthropic"
+    supports_streaming = True
 
     def __init__(self, config):
         self.config = config
@@ -273,7 +381,7 @@ class AnthropicClient:
             headers["x-api-key"] = self.config.api_key
         return headers
 
-    def chat(self, system, messages, tools=None):
+    def chat(self, system, messages, tools=None, on_delta=None):
         payload = {
             "model": self.config.model,
             "max_tokens": self.config.max_tokens,
@@ -290,6 +398,11 @@ class AnthropicClient:
                 }
                 for item in tools
             ]
+        if on_delta is not None:
+            try:
+                return self._stream(payload, on_delta)
+            except LLMError:
+                pass
         data = _request_json(
             self.base_url + "/v1/messages", payload, self._headers(), self.config.timeout
         )
@@ -313,6 +426,71 @@ class AnthropicClient:
             raw=data,
         )
 
+
+    def _stream(self, payload, on_delta):
+        payload = dict(payload)
+        payload["stream"] = True
+        text_parts = []
+        calls = {}
+        usage = {}
+
+        def handle(event):
+            kind = event.get("type")
+            if kind == "message_start":
+                for key, value in normalise_usage(
+                    (event.get("message") or {}).get("usage") or {}
+                ).items():
+                    if value:
+                        usage[key] = value
+            elif kind == "content_block_start":
+                block = event.get("content_block") or {}
+                if block.get("type") == "tool_use":
+                    calls[event.get("index", 0)] = {
+                        "id": block.get("id", ""),
+                        "name": block.get("name", ""),
+                        "json": "",
+                    }
+            elif kind == "content_block_delta":
+                delta = event.get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    text_parts.append(delta.get("text", ""))
+                    on_delta("text", delta.get("text", ""))
+                elif delta.get("type") == "input_json_delta":
+                    index = event.get("index", 0)
+                    slot = calls.setdefault(index, {"id": "", "name": "", "json": ""})
+                    slot["json"] += delta.get("partial_json", "")
+            elif kind == "message_delta":
+                for key, value in normalise_usage(event.get("usage") or {}).items():
+                    if value:
+                        usage[key] = value
+
+        _stream_events(
+            self.base_url + "/v1/messages",
+            payload,
+            self._headers(),
+            self.config.timeout,
+            handle,
+        )
+        tool_calls = []
+        for index in sorted(calls):
+            slot = calls[index]
+            try:
+                arguments = json.loads(slot["json"]) if slot["json"] else {}
+            except ValueError:
+                arguments = {}
+            tool_calls.append(
+                ToolCall(
+                    id=slot["id"] or "tool_%d" % index,
+                    name=slot["name"],
+                    arguments=arguments,
+                )
+            )
+        return ChatResult(
+            text="".join(text_parts).strip(),
+            tool_calls=tool_calls,
+            usage=usage or {},
+            raw={},
+        )
 
 def _to_openai_messages(messages):
     out = []

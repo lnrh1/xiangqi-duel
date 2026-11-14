@@ -181,6 +181,7 @@ class Handler(BaseHTTPRequestHandler):
             ".html": "text/html; charset=utf-8",
             ".css": "text/css; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
+            ".svg": "image/svg+xml",
         }.get(suffix, "application/octet-stream")
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -195,6 +196,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in ("/", "/index.html"):
             self._static("index.html")
+        elif path == "/favicon.svg":
+            self._static("favicon.svg")
         elif path == "/api/health":
             self._json({"ok": True, "version": __version__})
         elif path == "/api/models":

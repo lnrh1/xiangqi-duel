@@ -100,6 +100,8 @@ class LLMPlayer:
         self.usage_total = {"input": 0, "output": 0, "total": 0}
         self.turns = 0
         self.toolbox = None
+        self._delta_parts = []
+        self._delta_last = 0.0
 
     # ------------------------------------------------------------------ turn
     def choose(self, game):
@@ -117,11 +119,15 @@ class LLMPlayer:
 
         for step in range(self.max_steps):
             self.emit({"type": "llm_step", "side": self.side, "step": step + 1})
+            chat_kwargs = {"tools": tool_specs()}
+            if getattr(self.client, "supports_streaming", False):
+                chat_kwargs["on_delta"] = self._on_delta
             try:
-                result = self.client.chat(system, messages, tools=tool_specs())
+                result = self.client.chat(system, messages, **chat_kwargs)
             except LLMError as exc:
                 self.emit({"type": "error", "side": self.side, "text": str(exc)})
                 return self._fallback(game, last_text, error=str(exc))
+            self._flush_delta()
             self._merge_usage(result.usage)
             if result.reasoning:
                 self.emit(
@@ -213,6 +219,35 @@ class LLMPlayer:
         return self._fallback(game, last_text, error="no move within step limit")
 
     # -------------------------------------------------------------- helpers
+    def _on_delta(self, kind, text):
+        if not text:
+            return
+        self._delta_parts.append((kind, text))
+        if time.time() - self._delta_last >= 0.08:
+            self._flush_delta()
+
+    def _flush_delta(self):
+        if not self._delta_parts:
+            return
+        merged = {}
+        order = []
+        for kind, text in self._delta_parts:
+            if kind not in merged:
+                merged[kind] = []
+                order.append(kind)
+            merged[kind].append(text)
+        for kind in order:
+            self.emit(
+                {
+                    "type": "thinking_delta",
+                    "side": self.side,
+                    "variant": kind,
+                    "text": "".join(merged[kind]),
+                }
+            )
+        self._delta_parts = []
+        self._delta_last = time.time()
+
     def _messages(self):
         return [message for block in self.blocks for message in block]
 
