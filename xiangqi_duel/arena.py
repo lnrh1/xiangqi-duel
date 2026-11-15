@@ -483,7 +483,7 @@ class Match:
             saved_turn = self.game.turn
             self.game.turn = piece.color
             try:
-                record = self.game.play(piece_id, to, adjudicate=False)
+                record = self.game.play(piece_id, to, adjudicate=True)
             except Exception:
                 self.game.turn = saved_turn
                 raise

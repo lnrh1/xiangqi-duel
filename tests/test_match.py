@@ -136,6 +136,20 @@ class MatchTest(unittest.TestCase):
         self.assertEqual(match.game.status, "playing")
         match.stop()
 
+    def test_free_mode_checkmate_ends(self):
+        fen = "4k4/9/2N3N2/9/9/9/9/9/9/KR7 w - - 0 1"
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="human"),
+            free=True,
+            fen=fen,
+        )
+        match.start()
+        match.free_move("red_chariot_1", "b9")
+        self.assertEqual(match.game.result["code"], "checkmate")
+        self.assertEqual(match.snapshot()["status"], "finished")
+        match.stop()
+
     def test_aivai_allows_spectator_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),

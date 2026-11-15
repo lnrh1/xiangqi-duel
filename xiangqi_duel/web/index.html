@@ -989,7 +989,7 @@
     else { resignBtn.classList.add('hidden'); }
     var finished = snap.status === 'finished';
     $('btn-replay').classList.toggle('hidden', !finished);
-    $('btn-rematch').classList.toggle('hidden', !finished);
+    $('btn-rematch').classList.toggle('hidden', !finished || snap.mode === 'free');
     var spectate = snap.mode === 'aivai';
     var free = snap.mode === 'free';
     var simAllowed;

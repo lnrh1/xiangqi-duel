@@ -440,6 +440,7 @@ class Handler(BaseHTTPRequestHandler):
                     PlayerSpec(kind="human"),
                     free=True,
                     max_plies=300,
+                    fen=body.get("fen") or None,
                 )
                 match.start()
             except Exception as exc:  # noqa: BLE001
