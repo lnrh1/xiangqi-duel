@@ -90,6 +90,21 @@ class LLMPlayerTest(unittest.TestCase):
         decision = player.choose(Game())
         self.assertEqual(decision.messages, ["承让了"])
 
+    def test_cached_tokens_accumulate(self):
+        client = FakeClient(
+            [
+                ChatResult(
+                    text="走马八进七。",
+                    tool_calls=[ToolCall("c1", "move", {"piece_id": "red_horse_1", "to": "c2"})],
+                    usage={"input": 120, "output": 8, "total": 128, "cached": 90},
+                )
+            ]
+        )
+        player = LLMPlayer("red", client, config())
+        decision = player.choose(Game())
+        self.assertEqual(decision.usage["cached"], 90)
+        self.assertEqual(decision.context_tokens, 120)
+
     def test_no_move_aborts(self):
         client = FakeClient([ChatResult(text="嗯…"), ChatResult(text="嗯…")])
         player = LLMPlayer("red", client, config(), max_steps=2)

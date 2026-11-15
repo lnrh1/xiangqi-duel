@@ -383,7 +383,7 @@ class LLMPlayer:
         return text
 
     def _merge_usage(self, usage):
-        for key in ("input", "output", "total"):
+        for key in ("input", "output", "total", "cached"):
             self.usage_total[key] = self.usage_total.get(key, 0) + usage.get(key, 0)
         if usage.get("input"):
             self.context_tokens = int(usage.get("input") or 0)
