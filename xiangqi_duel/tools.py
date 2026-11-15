@@ -264,16 +264,16 @@ def tool_specs(allowed=None):
                 "name": "list_pieces_in_area",
                 "description": (
                     "按坐标范围列出棋子（含编号、x/y、格子名）。"
-                    "x 是列号 0-8（a=0 ... i=8），y 是行号 0-9"
+                    "x 是列号 1-9，y 是行号 1-10"
                     "（0 是红方底线）。不传参数就是全盘。"
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "x_min": {"type": "integer", "description": "最小列号 0-8，默认 0"},
-                        "x_max": {"type": "integer", "description": "最大列号 0-8，默认 8"},
-                        "y_min": {"type": "integer", "description": "最小行号 0-9，默认 0"},
-                        "y_max": {"type": "integer", "description": "最大行号 0-9，默认 9"},
+                        "x_min": {"type": "integer", "description": "最小列号 1-9，默认 1"},
+                        "x_max": {"type": "integer", "description": "最大列号 1-9，默认 9"},
+                        "y_min": {"type": "integer", "description": "最小行号 1-10，默认 1"},
+                        "y_max": {"type": "integer", "description": "最大行号 1-10，默认 10"},
                         "color": {
                             "type": "string",
                             "enum": ["both", "red", "black"],
@@ -297,7 +297,7 @@ def tool_specs(allowed=None):
                     "properties": {
                         "square": {
                             "type": "string",
-                            "description": "格子名，例如 h2",
+                            "description": "格子，例如 8-2（列 1-9，行 1-10）",
                         }
                     },
                     "required": ["square"],

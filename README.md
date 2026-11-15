@@ -145,7 +145,7 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 | `list_pieces` | 列出棋子及编号、类型、位置 | `{"color": "red"}` |
 | `get_piece` | 单枚棋子的位置与可走点位 | `{"piece_id": "red_horse_1"}` |
 | `list_legal_moves` | 一枚棋子或全部棋子的合法着法 | `{"piece_id": "red_cannon_1"}` |
-| `move` | 走一步棋（回合结束时统一执行） | `{"piece_id": "red_horse_1", "to": "c2"}` |
+| `move` | 走一步棋（回合结束时统一执行） | `{"piece_id": "red_horse_1", "to": "3-3"}` |
 | `get_status` | 轮次、状态、结果、将军、手数、重复局面、子力 | `{}` |
 | `get_history` | 最近若干步着法与留言 | `{"last": 8}` |
 | `send_message` | 给对手留言（每局 6 条，每条 80 字） | `{"text": "承让"}` |
@@ -154,8 +154,8 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 | `offer_draw` | 提议和棋，附一句 note；对手也提议即双方同意 | `{"note": "局面均势"}` |
 | `note` | 给自己记备忘，后续回合出现在提示里 | `{"text": "防他马八进七"}` |
 | `resign` | 认输 | `{"reason": "无路可走"}` |
-| `list_pieces_in_area` | 按坐标范围列出棋子 | `{"x_min": 0, "x_max": 4, "y_min": 0, "y_max": 4}` |
-| `describe_square` | 单格信息：棋子、九宫、被哪方攻击 | `{"square": "h2"}` |
+| `list_pieces_in_area` | 按坐标范围列出棋子 | `{"x_min": 1, "x_max": 5, "y_min": 1, "y_max": 5}` |
+| `describe_square` | 单格信息：棋子、九宫、被哪方攻击 | `{"square": "8-2"}` |
 
 ## 棋子编码
 

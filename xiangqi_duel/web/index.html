@@ -1018,7 +1018,7 @@
     var hint = $('chat-hint');
     if (snap.mode === 'human') {
       chatInput.disabled = false;
-      hint.textContent = '你的留言会在 AI 下一回合被读到；它可以用 send_message 回复你。';
+      hint.textContent = '';
     } else {
       chatInput.disabled = true;
       hint.textContent = '观战模式：双方 AI 的对话会出现在这里，你不能插话。';
@@ -1337,7 +1337,7 @@
       var who = side === 'user' ? '你' : (side === 'red' ? '红方' : '黑方');
       html += '<div class="msg ' + cls + '"><span class="who">' + who + '</span>' + esc(message.text) + '</div>';
     });
-    if (!html) { html = '<p class="empty">还没有人说话。AI 可以用 send_message 留言。</p>'; }
+    if (!html) { html = ''; }
     list.innerHTML = html;
     list.scrollTop = list.scrollHeight;
   }
