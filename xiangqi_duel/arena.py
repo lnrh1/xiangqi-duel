@@ -538,6 +538,8 @@ class Match:
                 "ended": ended,
             }
         )
+        if ended:
+            self._broadcast({"type": "state", "snapshot": self.snapshot()})
         return {
             "ok": True,
             "snapshot": snapshot,
@@ -550,6 +552,7 @@ class Match:
     def end_human_sim(self):
         self.human_sim = None
         self._broadcast({"type": "sim", "side": self.human_side, "snapshot": None})
+        self._broadcast({"type": "state", "snapshot": self.snapshot()})
 
     # -------------------------------------------------------------- snapshots
     def snapshot(self):

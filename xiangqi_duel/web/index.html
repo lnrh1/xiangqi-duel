@@ -871,7 +871,8 @@
     settingsFromHome: false,
     artEnabled: true,
     sim: null,
-    simSelected: null
+    simSelected: null,
+    simIgnoreUntil: 0
   };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -982,6 +983,7 @@
     var spectate = snap.mode !== 'human';
     $('sim-actions').classList.toggle('hidden', spectate || snap.status !== 'playing');
     var sims = snap.sims || {};
+    if (snap.mode === 'human' && Date.now() < state.simIgnoreUntil) { sims = {}; }
     var simSide = null;
     var simHuman = false;
     if (snap.mode === 'human') {
@@ -2683,8 +2685,13 @@
   }
 
   function hideSim() {
+    var wasHuman = !!(state.sim && state.sim.human);
     state.sim = null;
     state.simSelected = null;
+    if (wasHuman) {
+      state.simIgnoreUntil = Date.now() + 2500;
+      if (state.snapshot) { state.snapshot.sims = {}; }
+    }
     $('board').classList.remove('simulating');
     updateSimButton();
     if (state.snapshot) { renderBoard(state.snapshot); }
@@ -2713,11 +2720,12 @@
 
   function showSim(snapshot, side, human, ended) {
     if (!snapshot) { hideSim(); return; }
+    if (human) { state.simIgnoreUntil = 0; }
     state.sim = { snapshot: snapshot, side: side, human: human };
     renderSimBoard();
     if (ended) {
       setTimeout(function () {
-        if (state.sim && state.sim.snapshot === snapshot) { hideSim(); }
+        if (state.sim && state.sim.snapshot === snapshot) { hideSim(); refreshState(); }
       }, 1500);
     }
   }
@@ -2765,6 +2773,7 @@
       if (state.sim && state.sim.human) {
         try { await api('/api/sim/end', { method: 'POST', body: {} }); } catch (err) {}
         hideSim();
+        refreshState();
         return;
       }
       try {

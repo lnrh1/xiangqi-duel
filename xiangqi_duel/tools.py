@@ -265,7 +265,7 @@ def tool_specs(allowed=None):
                 "description": (
                     "按坐标范围列出棋子（含编号、x/y、格子名）。"
                     "x 是列号 1-9，y 是行号 1-10"
-                    "（0 是红方底线）。不传参数就是全盘。"
+                    "（1 是红方底线）。不传参数就是全盘。"
                 ),
                 "parameters": {
                     "type": "object",
