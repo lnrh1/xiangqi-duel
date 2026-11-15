@@ -331,7 +331,7 @@ class LLMPlayer:
                 item = self.inbox.get_nowait()
             except queue.Empty:
                 return
-            who = "对手" if item.get("from") == "opponent" else "观众"
+            who = item.get("label") or ("对手" if item.get("from") == "opponent" else "观众")
             block.append(
                 {
                     "role": "user",

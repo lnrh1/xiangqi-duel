@@ -118,12 +118,13 @@ class MatchTest(unittest.TestCase):
         finally:
             match.stop()
 
-    def test_aivai_rejects_chat(self):
+    def test_aivai_allows_spectator_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),
             PlayerSpec(kind="engine", depth=1),
             max_plies=4,
         )
         match.start(block=True)
-        with self.assertRaises(ValueError):
-            match.say("观战不能发言")
+        match.say("观众提醒：可以考虑兑子")
+        self.assertEqual(match.chat[-1]["text"], "观众提醒：可以考虑兑子")
+        self.assertEqual(match.chat[-1]["side"], "user")

@@ -486,8 +486,7 @@ class Match:
         text = str(text or "").strip()[:200]
         if not text:
             return
-        if self.human_side is None:
-            raise ValueError("观战模式不能发言")
+        label = "观众" if self.mode == "aivai" else "对手"
         with self.lock:
             self.chat.append(
                 {
@@ -498,7 +497,7 @@ class Match:
                 }
             )
             for player in self.players.values():
-                player.inbox.put({"from": "human", "text": text})
+                player.inbox.put({"from": "human", "label": label, "text": text})
         self._broadcast({"type": "state", "snapshot": self.snapshot()})
 
     def _sims_locked(self):
@@ -515,6 +514,8 @@ class Match:
     def start_human_sim(self):
         if self.mode != "human":
             raise ValueError("只有人机模式可以使用推演棋盘")
+        if self.enabled_tools is not None and "start_simulation" not in self.enabled_tools:
+            raise ValueError("推演棋盘工具未启用")
         if self.game.status != "playing":
             raise ValueError("对局已结束")
         if self.human_sim is None:
@@ -572,6 +573,7 @@ class Match:
                     "trace": self.trace[-120:] if self.mode == "aivai" else [],
                     "trace_hidden": self.mode == "human",
                     "usage": self.usage,
+                    "tools": self.enabled_tools,
                     "errors": self.errors[-5:],
                     "sims": self._sims_locked(),
                     "started_at": self.started_at,

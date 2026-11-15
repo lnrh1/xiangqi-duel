@@ -981,7 +981,13 @@
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-rematch').classList.toggle('hidden', !finished);
     var spectate = snap.mode !== 'human';
-    $('sim-actions').classList.toggle('hidden', spectate || snap.status !== 'playing');
+    var simAllowed;
+    if (snap.tools === null || snap.tools === undefined) {
+      simAllowed = state.tools === null || state.tools.indexOf('start_simulation') !== -1;
+    } else {
+      simAllowed = snap.tools.indexOf('start_simulation') !== -1;
+    }
+    $('sim-actions').classList.toggle('hidden', spectate || snap.status !== 'playing' || !simAllowed);
     var sims = snap.sims || {};
     if (snap.mode === 'human' && Date.now() < state.simIgnoreUntil) { sims = {}; }
     var simSide = null;
@@ -1007,8 +1013,8 @@
     $('col-red').classList.toggle('hidden', !spectate);
     $('col-black').classList.toggle('hidden', !spectate);
     $('btn-drawer').classList.toggle('hidden', !spectate);
-    $('chat-form').classList.toggle('hidden', snap.mode === 'aivai');
-    $('chat-hint').textContent = snap.mode === 'aivai' ? '观战模式，对话只读' : '';
+    $('chat-form').classList.toggle('hidden', snap.status !== 'playing');
+    $('chat-hint').textContent = '';
     $('tab-trace').classList.add('hidden');
     fitBoard();
     if (!spectate) { $('side-panel').classList.remove('open'); }
@@ -1017,14 +1023,8 @@
       ? '人机对弈，你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
       : '双 AI 对弈，实时观战';
     var chatInput = $('chat-input');
-    var hint = $('chat-hint');
-    if (snap.mode === 'human') {
-      chatInput.disabled = false;
-      hint.textContent = '';
-    } else {
-      chatInput.disabled = true;
-      hint.textContent = '观战模式：双方 AI 的对话会出现在这里，你不能插话。';
-    }
+    chatInput.disabled = false;
+    chatInput.placeholder = snap.mode === 'human' ? '对 AI 说点什么…' : '以观众身份提醒 AI…';
     detectFx(snap);
   }
 
@@ -1336,7 +1336,9 @@
     (snap.chat || []).forEach(function (message) {
       var side = message.side;
       var cls = side === 'user' ? 'user' : side;
-      var who = side === 'user' ? '你' : (side === 'red' ? '红方' : '黑方');
+      var who = side === 'user'
+        ? (snap.mode === 'aivai' ? '观众' : '你')
+        : (side === 'red' ? '红方' : '黑方');
       html += '<div class="msg ' + cls + '"><span class="who">' + who + '</span>' + esc(message.text) + '</div>';
     });
     if (!html) { html = ''; }
