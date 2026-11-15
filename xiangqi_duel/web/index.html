@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<title>象棋对弈 · Xiangqi Duel</title>
+<title>象棋对弈 Xiangqi Duel</title>
 <style>
   :root {
     --bg: #17130f;
@@ -613,7 +613,7 @@
   <div class="brand">
     <div class="logo">帥</div>
     <div>
-      <h1>象棋对弈 · Xiangqi Duel</h1>
+      <h1>象棋对弈 Xiangqi Duel</h1>
       <p id="subtitle">双 AI 对弈，实时观战</p>
     </div>
   </div>
@@ -712,7 +712,7 @@
   <div class="home-inner">
     <div class="home-badge"><span>帥</span></div>
     <h1>象棋对弈</h1>
-    <p class="home-sub">双 AI 观战 · 人机对弈 · 模型库</p>
+    <p class="home-sub">双 AI 观战 / 人机对弈 / 模型库</p>
     <div class="home-actions">
       <button class="btn primary big" id="home-new">新对局</button>
       <button class="btn big" id="home-settings">设置</button>
@@ -724,7 +724,6 @@
   <div class="screen-head">
     <button class="btn ghost" id="modes-back">← 返回</button>
     <h2>选择模式</h2>
-    <span class="hint">两种模式共用同一套模型与工具</span>
   </div>
   <div class="mode-cards">
     <button class="mode-card human" id="mode-human">
@@ -748,18 +747,17 @@
   <div class="screen-head">
     <button class="btn ghost" id="lobby-back">← 返回</button>
     <h2 id="lobby-title">选择棋手</h2>
-    <span class="hint" id="lobby-hint"></span>
   </div>
   <div class="lobby-cards">
     <button class="side-card red" id="side-red">
       <div class="side-avatar">帥</div>
-      <div class="side-info"><strong>红方</strong><span id="side-red-label">空位 · 点击选择</span></div>
+      <div class="side-info"><strong>红方</strong><span id="side-red-label">空位，点击选择</span></div>
       <div class="side-art hidden" id="side-red-art"></div>
       <span class="side-edit">选择</span>
     </button>
     <button class="side-card black" id="side-black">
       <div class="side-avatar">將</div>
-      <div class="side-info"><strong>黑方</strong><span id="side-black-label">空位 · 点击选择</span></div>
+      <div class="side-info"><strong>黑方</strong><span id="side-black-label">空位，点击选择</span></div>
       <div class="side-art hidden" id="side-black-art"></div>
       <span class="side-edit">选择</span>
     </button>
@@ -787,14 +785,13 @@
     <section class="setup-section">
       <div class="section-head">
         <h3>① 模型库</h3>
-        <span class="hint">API Key 只保存在本机服务器，界面不会回显</span>
       </div>
       <div class="model-list" id="model-list"></div>
       <div class="add-model">
         <select id="add-provider"></select>
         <input id="add-base-url" placeholder="base_url（可选，自定义必填）">
         <input id="add-key" type="password" placeholder="API Key">
-        <input id="add-model" placeholder="模型名，如 deepseek-chat">
+        <input id="add-model" placeholder="模型 ID">
         <input id="add-label" placeholder="备注（可选）">
         <button class="btn" id="btn-discover">获取模型</button>
         <button class="btn primary" id="btn-add-model">添加</button>
@@ -1009,13 +1006,13 @@
     $('col-black').classList.toggle('hidden', !spectate);
     $('btn-drawer').classList.toggle('hidden', !spectate);
     $('chat-form').classList.toggle('hidden', snap.mode === 'aivai');
-    $('chat-hint').textContent = snap.mode === 'aivai' ? '观战模式 · 对话只读' : '';
+    $('chat-hint').textContent = snap.mode === 'aivai' ? '观战模式，对话只读' : '';
     $('tab-trace').classList.add('hidden');
     fitBoard();
     if (!spectate) { $('side-panel').classList.remove('open'); }
     var subtitle = $('subtitle');
     subtitle.textContent = snap.mode === 'human'
-      ? '人机对弈 · 你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
+      ? '人机对弈，你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
       : '双 AI 对弈，实时观战';
     var chatInput = $('chat-input');
     var hint = $('chat-hint');
@@ -1103,14 +1100,14 @@
       } else {
         text.textContent = '轮到' + who + '走棋';
       }
-      check.textContent = snap.check ? '· 将军！' : '';
+      check.textContent = snap.check ? '将军！' : '';
       material.textContent = '子力  红 ' + snap.material.red + ' / 黑 ' + snap.material.black;
     } else {
       var result = snap.result || {};
       var winner = result.winner ? (result.winner === 'red' ? '红方' : '黑方') : '和棋';
       var reasonZh = reasonLabel(result.code || result.reason, result.reason);
       text.textContent = '对局结束：' + (winner === '和棋' ? '和棋' : winner + '胜');
-      check.textContent = '· ' + (reasonZh || '');
+      check.textContent = (reasonZh || '');
       material.textContent = '共 ' + snap.ply + ' 手';
     }
   }
@@ -1154,12 +1151,14 @@
     if (info.kind === 'human') {
       kind = '人类棋手';
     } else if (info.kind === 'engine') {
-      kind = '离线 alpha-beta 引擎 · 深度 ' + (info.depth || 3);
+      kind = '离线 alpha-beta 引擎，深度 ' + (info.depth || 3);
     } else {
       var model = info.model || '';
-      var auto = info.provider + ' · ' + model;
-      title = model && label === auto ? model : label;
-      kind = info.provider + (model && model !== title ? ' · ' + model : '');
+      var autoDot = info.provider + ' · ' + model;
+      var autoSlash = info.provider + ' / ' + model;
+      var pretty = String(label).replace(/·/g, '/');
+      title = model && (label === autoDot || label === autoSlash) ? model : pretty;
+      kind = info.provider + (model && model !== title ? ' / ' + model : '');
     }
     var active = snap.status === 'playing' && snap.turn === side ? ' active' : '';
     return '<div class="player ' + side + active + '">' +
@@ -1193,9 +1192,9 @@
     var side = artUsageSide(key);
     var usage = (snap && snap.usage && side) ? (snap.usage[side] || {}) : {};
     box.innerHTML = "总输入 <b>" + formatTokens(usage.input) + "</b>" +
-      " · 缓存命中 <b>" + formatTokens(usage.cached) + "</b>" +
-      " · 总输出 <b>" + formatTokens(usage.output) + "</b>" +
-      " · 当前上下文 <b>" + formatTokens(usage.context) + "</b>";
+      " / 缓存命中 <b>" + formatTokens(usage.cached) + "</b>" +
+      " / 总输出 <b>" + formatTokens(usage.output) + "</b>" +
+      " / 当前上下文 <b>" + formatTokens(usage.context) + "</b>";
   }
 
   function showArtInfo(key) {
@@ -1526,10 +1525,13 @@
     }
     var html = '';
     state.models.forEach(function (model) {
+      var autoLabel = model.provider + ' · ' + model.model;
+      var title = model.label === autoLabel ? model.model : model.label;
+      var sub = model.label === autoLabel ? model.provider : autoLabel;
       html += '<div class="model-row" data-model="' + model.id + '">' +
-        '<div><span class="name">' + esc(model.label) + '</span>' +
-        '<span class="sub">' + esc(model.provider + ' · ' + model.model) +
-        (model.has_key ? '' : ' · <b>缺少 Key</b>') + '</span></div>' +
+        '<div><span class="name">' + esc(title) + '</span>' +
+        '<span class="sub">' + esc(sub) +
+        (model.has_key ? '' : ' 缺少 Key') + '</span></div>' +
         '<div class="actions">' +
         '<button class="btn" data-test="' + model.id + '">测试</button>' +
         '<button class="btn" data-del="' + model.id + '">删除</button>' +
@@ -1726,7 +1728,7 @@
     slot.className = 'test-slot';
     try {
       var data = await api('/api/models/' + id + '/test', { method: 'POST', body: {} });
-      slot.textContent = '可用 · ' + (data.reply || 'ok') + ' · ' + data.seconds + 's';
+      slot.textContent = '可用 / ' + (data.reply || 'ok') + ' / ' + data.seconds + 's';
       slot.className = 'test-ok';
     } catch (err) {
       slot.textContent = '失败：' + err.message;
@@ -2048,7 +2050,7 @@
     if (human) {
       if (code === 'resign' && winner === human) {
         title = '胜 利';
-        subtitle = '对方认输 · ' + reason;
+        subtitle = '对方认输，' + reason;
         tone = 'win';
       } else if (code === 'resign' && winner !== human) {
         title = '认 输';
@@ -2075,7 +2077,7 @@
       subtitle = (winner === 'red' ? '红方' : '黑方') + '胜';
     } else if (code === 'resign') {
       title = '认 输';
-      subtitle = (winner === 'red' ? '黑方' : '红方') + '认输 · ' + reason;
+      subtitle = (winner === 'red' ? '黑方' : '红方') + '认输，' + reason;
       tone = 'draw';
     } else if (!winner) {
       title = '和 棋';
@@ -2083,7 +2085,7 @@
       tone = 'draw';
     } else {
       title = '胜 利';
-      subtitle = (winner === 'red' ? '红方' : '黑方') + '胜 · ' + reason;
+      subtitle = (winner === 'red' ? '红方' : '黑方') + '胜，' + reason;
       tone = 'win';
     }
 
@@ -2304,7 +2306,7 @@
     renderReplayChat(shownChats);
     renderReplayMoves(ply);
     var info = rp.index === 0 ? '开局' : ('第 ' + ply + ' 手 / 共 ' + rp.log.moves.length + ' 手');
-    $('rp-info').textContent = info + ' · 第 ' + rp.index + ' / ' + (rp.timeline.length - 1) + ' 步';
+    $('rp-info').textContent = info + '，第 ' + rp.index + ' / ' + (rp.timeline.length - 1) + ' 步';
     $('turn-text').textContent = '复盘：' + info;
     $('check-text').textContent = '';
     $('material-text').textContent = '';
@@ -2482,7 +2484,7 @@
   }
 
   function entryLabel(entry) {
-    if (!entry) { return '空位 · 点击选择'; }
+    if (!entry) { return '空位，点击选择'; }
     if (entry.kind === 'engine') { return '本地引擎（离线）'; }
     if (entry.kind === 'human') { return '我（人类）'; }
     return entry.label || entry.id;
@@ -2520,11 +2522,8 @@
 
   function openLobby(mode) {
     state.lobby = { mode: mode, red: null, black: null };
-    $('lobby-title').textContent = mode === 'human' ? '人机对弈 · 选择双方' : 'AI 对战 AI · 选择双方';
+    $('lobby-title').textContent = mode === 'human' ? '人机对弈，选择双方' : 'AI 对战 AI，选择双方';
     $('side-red').classList.remove('locked');
-    $('lobby-hint').textContent = mode === 'human'
-      ? '选一边的模型，另一边会自动变成「我」'
-      : '两边各选一个模型；这个模式不出现「我」';
     updateLobby();
     setScreen('lobby');
   }
@@ -2542,7 +2541,7 @@
         label: model.label,
         provider: model.provider,
         model: model.model,
-        sub: model.provider + ' · ' + model.model
+        sub: model.provider + ' / ' + model.model
       });
     });
     return entries;

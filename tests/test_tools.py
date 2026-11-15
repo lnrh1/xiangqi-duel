@@ -26,7 +26,7 @@ class ToolBoxTest(unittest.TestCase):
         result = self.box.call("list_legal_moves", {"piece_id": "red_horse_1"})
         self.assertTrue(result["ok"])
         moves = result["moves"]["red_horse_1"]
-        self.assertEqual({m["to"] for m in moves}, {"a2", "c2"})
+        self.assertEqual({m["to"] for m in moves}, {"1-3", "3-3"})
         self.assertIn("马八进七", [m["notation"] for m in moves])
 
     def test_list_all_legal_moves(self):
@@ -54,7 +54,7 @@ class ToolBoxTest(unittest.TestCase):
     def test_illegal_move(self):
         result = self.box.call("move", {"piece_id": "red_horse_1", "to": "e2"})
         self.assertFalse(result["ok"])
-        self.assertIn("legal targets", result["error"])
+        self.assertIn("可走", result["error"])
 
     def test_cannot_move_opponent_piece(self):
         result = self.box.call("move", {"piece_id": "black_horse_1", "to": "c7"})
@@ -101,15 +101,14 @@ class CoordinateToolsTest(unittest.TestCase):
         result = self.box.call("list_pieces", {"color": "red"})
         self.assertTrue(result["ok"])
         horse = [p for p in result["pieces"] if p["id"] == "red_horse_1"][0]
-        self.assertEqual(horse["x"], 1)
-        self.assertEqual(horse["y"], 0)
-        self.assertEqual(horse["square"], "b0")
-        self.assertEqual(horse["file"], "b")
+        self.assertEqual(horse["x"], 2)
+        self.assertEqual(horse["y"], 1)
+        self.assertEqual(horse["square"], "2-1")
 
     def test_list_pieces_in_area(self):
         result = self.box.call(
             "list_pieces_in_area",
-            {"x_min": 0, "x_max": 1, "y_min": 0, "y_max": 3},
+            {"x_min": 1, "x_max": 2, "y_min": 1, "y_max": 4},
         )
         self.assertTrue(result["ok"])
         ids = {p["id"] for p in result["pieces"]}
@@ -127,10 +126,10 @@ class CoordinateToolsTest(unittest.TestCase):
     def test_describe_square(self):
         result = self.box.call("describe_square", {"square": "h2"})
         self.assertTrue(result["ok"])
-        self.assertEqual(result["square"], "h2")
+        self.assertEqual(result["square"], "8-3")
         self.assertEqual(result["piece"]["id"], "red_cannon_2")
-        self.assertEqual(result["x"], 7)
-        self.assertEqual(result["y"], 2)
+        self.assertEqual(result["x"], 8)
+        self.assertEqual(result["y"], 3)
 
     def test_describe_empty_square(self):
         result = self.box.call("describe_square", {"square": "e5"})

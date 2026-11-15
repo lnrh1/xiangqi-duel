@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from .coords import in_palace, parse_square, square as square_name
+from .coords import in_palace, numeric_square, parse_coord, square as square_name
 from .game import IllegalMove
 from .moves import in_check, is_attacked, other
 from .notation import move_text
@@ -17,8 +17,8 @@ from .simulation import Simulation
 
 PIECE_ID_HELP = (
     "棋子编号在对局中保持不变，例如 red_horse_1、black_advisor_2、"
-    "red_general。格子写作 h2：a-i 为纵线，0-9 为横线，a0 是红方左下角，"
-    "i9 是黑方右上角。"
+    "red_general。格子写成 列-行 的纯数字：列 1-9，行 1-10；"
+    "1-1 是红方左下角，9-10 是黑方右上角。"
 )
 
 SIM_TOOLS = {
@@ -127,7 +127,7 @@ def tool_specs(allowed=None):
                         },
                         "to": {
                             "type": "string",
-                            "description": "目标格，例如 e2。",
+                            "description": "目标格，例如 3-3（列 1-9，行 1-10）。",
                         },
                     },
                     "required": ["to"],
@@ -390,7 +390,7 @@ class ToolBox:
     # -------------------------------------------------------------- helpers
     def _require_own_piece(self, piece_id=None, frm=None):
         if piece_id is None and frm is not None:
-            x, y = parse_square(frm)
+            x, y = parse_coord(frm)
             piece = self.game.board.piece_at(x, y)
             if piece is None:
                 raise IllegalMove("%s 上没有棋子" % (frm,))
@@ -415,11 +415,9 @@ class ToolBox:
             "color": piece.color,
             "type": piece.type,
             "name": piece.name_zh,
-            "square": piece.square,
-            "x": piece.x,
-            "y": piece.y,
-            "file": "abcdefghi"[piece.x],
-            "rank": piece.y,
+            "square": numeric_square(piece.x, piece.y),
+            "x": piece.x + 1,
+            "y": piece.y + 1,
             "glyph": piece.glyph,
         }
 
@@ -447,7 +445,7 @@ class ToolBox:
         return {
             "ok": True,
             "piece": self._piece_summary(piece),
-            "legal_moves": [m.to_str for m in moves],
+            "legal_moves": [numeric_square(*m.to) for m in moves],
             "move_details": [self._move_detail(m, piece.color) for m in moves],
             "in_check": in_check(self.game.board, self.game.turn),
             "simulation": bool(self.sim),
@@ -459,8 +457,7 @@ class ToolBox:
         preview = board.clone()
         preview.make(move)
         return {
-            "to": move.to_str,
-            "ucci": move.ucci,
+            "to": numeric_square(*move.to),
             "notation": move_text(board, move, color),
             "capture": captured.id if captured else None,
             "capture_name": captured.name_zh if captured else None,
@@ -493,7 +490,7 @@ class ToolBox:
             moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
             if not moves:
                 continue
-            result[piece.id] = [move.to_str for move in moves]
+            result[piece.id] = [numeric_square(*move.to) for move in moves]
             total += len(moves)
         return {
             "ok": True,
@@ -505,16 +502,17 @@ class ToolBox:
             "simulation": bool(self.sim),
         }
 
-    def _t_list_pieces_in_area(self, x_min=0, x_max=8, y_min=0, y_max=9, color="both"):
+    def _t_list_pieces_in_area(self, x_min=1, x_max=9, y_min=1, y_max=10, color="both"):
         try:
             x_min, x_max = int(x_min), int(x_max)
             y_min, y_max = int(y_min), int(y_max)
         except (TypeError, ValueError):
             raise ValueError("x/y 范围必须是整数")
-        if not 0 <= x_min <= x_max <= 8:
-            raise ValueError("x 范围需满足 0 <= x_min <= x_max <= 8")
-        if not 0 <= y_min <= y_max <= 9:
-            raise ValueError("y 范围需满足 0 <= y_min <= y_max <= 9")
+        if not 1 <= x_min <= x_max <= 9:
+            raise ValueError("x 范围需满足 1 <= x_min <= x_max <= 9")
+        if not 1 <= y_min <= y_max <= 10:
+            raise ValueError("y 范围需满足 1 <= y_min <= y_max <= 10")
+        x_min, x_max, y_min, y_max = x_min - 1, x_max - 1, y_min - 1, y_max - 1
         color = str(color).lower()
         if color not in ("both", "red", "black"):
             raise ValueError("color 只能是 both、red 或 black")
@@ -527,26 +525,24 @@ class ToolBox:
             pieces.append(self._piece_summary(piece))
         return {
             "ok": True,
-            "x_min": x_min,
-            "x_max": x_max,
-            "y_min": y_min,
-            "y_max": y_max,
+            "x_min": x_min + 1,
+            "x_max": x_max + 1,
+            "y_min": y_min + 1,
+            "y_max": y_max + 1,
             "color": color,
             "pieces": pieces,
             "count": len(pieces),
         }
 
-    def _t_describe_square(self, square="h2"):
-        x, y = parse_square(square)
+    def _t_describe_square(self, square="1-1"):
+        x, y = parse_coord(square)
         board = self.game.board
         piece = board.piece_at(x, y)
         return {
             "ok": True,
-            "square": square_name(x, y),
-            "x": x,
-            "y": y,
-            "file": "abcdefghi"[x],
-            "rank": y,
+            "square": numeric_square(x, y),
+            "x": x + 1,
+            "y": y + 1,
             "piece": self._piece_summary(piece) if piece else None,
             "in_red_palace": in_palace("red", x, y),
             "in_black_palace": in_palace("black", x, y),
@@ -564,14 +560,20 @@ class ToolBox:
                 "现在轮到%s走棋，不是你" % (COLOR_ZH[game.turn],)
             )
         if to is None:
-            raise IllegalMove("缺少目标格 to（例如 e2）")
+            raise IllegalMove("缺少目标格 to（例如 3-3）")
+        tx, ty = parse_coord(to)
+        target = square_name(tx, ty)
         frm = extra.get("from") or extra.get("source")
         piece = self._require_own_piece(piece_id, frm)
         if piece.color != self.side:
             raise IllegalMove("%s 属于%s方" % (piece.id, COLOR_ZH[piece.color]))
-        move = game.find_move(piece.id, to)
+        move = game.find_move(piece.id, target)
         if move is None:
-            raise IllegalMove(game.illegal_reason(piece.id, to))
+            targets = [numeric_square(*m.to) for m in game.legal_moves(piece.id)]
+            raise IllegalMove(
+                "%s 不能走到 %s；可走：%s"
+                % (piece.id, numeric_square(tx, ty), ", ".join(targets) or "无")
+            )
 
         preview = game.board.clone()
         preview.make(move)
@@ -581,9 +583,8 @@ class ToolBox:
         return {
             "ok": True,
             "piece_id": piece.id,
-            "from": move.from_square,
-            "to": move.to_square,
-            "ucci": move.ucci,
+            "from": numeric_square(*move.frm),
+            "to": numeric_square(*move.to),
             "notation": move_text(game.board, move, self.side),
             "capture": captured,
             "check": gives_check,
@@ -636,7 +637,21 @@ class ToolBox:
             last = max(1, min(int(last), 100))
         except (TypeError, ValueError):
             last = 8
-        moves = [m.to_dict() for m in self.game.history[-last:]]
+        moves = [
+            {
+                "ply": record.ply,
+                "side": record.side,
+                "piece_id": record.piece_id,
+                "from": numeric_square(*record.frm),
+                "to": numeric_square(*record.to),
+                "capture": record.capture,
+                "notation": record.notation,
+                "gave_check": record.gave_check,
+                "comment": record.comment,
+                "thinking": record.thinking,
+            }
+            for record in self.game.history[-last:]
+        ]
         return {"ok": True, "moves": moves, "count": len(moves)}
 
     def _t_start_simulation(self):
@@ -675,21 +690,22 @@ class ToolBox:
         to = arguments.get("to")
         frm = arguments.get("from") or arguments.get("source")
         if piece_id is None and frm:
-            piece = sim.game.board.piece_at(*parse_square(frm))
+            fx, fy = parse_coord(frm)
+            piece = sim.game.board.piece_at(fx, fy)
             piece_id = piece.id if piece else None
         if not piece_id:
             return {"ok": False, "error": "缺少 piece_id（也可以用 from 指定起点）"}
         if to is None:
             return {"ok": False, "error": "缺少目标格 to"}
-        record, ended = sim.move(piece_id, to)
+        tx, ty = parse_coord(to)
+        record, ended = sim.move(piece_id, square_name(tx, ty))
         gives_check = in_check(sim.game.board, other(record.side))
         detail = {
             "ok": True,
             "simulated": True,
             "piece_id": record.piece_id,
-            "from": record.from_square,
-            "to": record.to_square,
-            "ucci": record.ucci,
+            "from": numeric_square(*record.frm),
+            "to": numeric_square(*record.to),
             "notation": record.notation,
             "capture": record.capture,
             "check": gives_check,
