@@ -15,7 +15,7 @@
 - **两种对局**：AI 对战 AI（双方思考、工具调用、留言全部可见），以及对战 AI（AI 内部过程对你隐藏）
 - **棋手与模型解耦**：模型统一存在本地模型库，填 base_url / Key 后可「获取模型」下拉选择，红黑各挑一个
 - **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 全局唯一，走子后编号不变
-- **14 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
+- **13 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
 - **独立上下文**：每个 AI 只有自己的对话历史，互不污染；默认中文提示词与中文记谱
 - **流式思考**：思考内容逐字推送；思考和工具调用默认折叠，点开看全文
 - **不限步数**：模型可以反复查询、思考到满意再落子；点「停止」会立即中断请求并结束对局
@@ -138,7 +138,7 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 
 ## 工具接口
 
-共 14 个工具，可在设置里逐个开关（`move` 必选）。关闭的工具不会出现在模型工具列表中。
+共 13 个工具，可在设置里逐个开关（`move` 必选）。关闭的工具不会出现在模型工具列表中。
 
 | 工具 | 作用 | 示例参数 |
 |---|---|---|
@@ -147,7 +147,6 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 | `list_legal_moves` | 一枚棋子或全部棋子的合法着法 | `{"piece_id": "red_cannon_1"}` |
 | `move` | 走一步棋（回合结束时统一执行） | `{"piece_id": "red_horse_1", "to": "3-3"}` |
 | `get_status` | 轮次、状态、结果、将军、手数、重复局面、子力 | `{}` |
-| `get_history` | 最近若干步着法与留言 | `{"last": 8}` |
 | `send_message` | 给对手留言（每局 6 条，每条 80 字） | `{"text": "承让"}` |
 | `start_simulation` | 进入推演棋盘（虚拟对局，最多 8 步） | `{}` |
 | `end_simulation` | 退出推演，回到真实棋盘 | `{}` |
@@ -224,7 +223,7 @@ xiangqi_duel/
   moves.py        走子生成、攻击判定、perft
   notation.py     中文记谱
   game.py         对局状态、判负与判和
-  tools.py        14 个 LLM 工具
+  tools.py        13 个 LLM 工具
   llm.py          OpenAI 兼容 / Anthropic 客户端
   agent.py        LLM 棋手（独立上下文）与本地引擎棋手
   arena.py        对局编排、事件流、留言、和棋
@@ -255,7 +254,7 @@ CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)，复制到 `.github/w
 ## English
 
 Xiangqi Duel is a dependency-free Chinese chess game built for LLM agents. Two AIs
-(any OpenAI-compatible or Anthropic provider) play each other with fourteen tools such as
+(any OpenAI-compatible or Anthropic provider) play each other with thirteen tools such as
 `list_legal_moves("red_horse_1")` and `move(...)`; each side keeps its own context and
 can chat with the opponent via `send_message`. A spectator page shows every thought and
 tool call, while human-vs-AI hides the AI's internal reasoning. Models live in a local

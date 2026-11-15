@@ -8,6 +8,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from .coords import numeric_square
 from .engine import choose_move
 from .llm import LLMError
 from .moves import other
@@ -38,7 +39,7 @@ SYSTEM_PROMPT = """你是一名中国象棋高手，正在参加一场正式对�
 
 # 你的工具
 list_pieces、list_pieces_in_area、get_piece、describe_square、list_legal_moves、
-move、get_status、get_history、send_message、offer_draw、note、resign、
+move、get_status、send_message、offer_draw、note、resign、
 start_simulation、end_simulation。
 查坐标用 get_piece(棋子编号) 或 describe_square(格子)；
 按范围找子用 list_pieces_in_area(x_min, x_max, y_min, y_max)；想记计划用 note。
@@ -340,10 +341,6 @@ class LLMPlayer:
 
     def _turn_prompt(self, game):
         last = game.history[-1] if game.history else None
-        recent = game.history[-6:]
-        recent_text = "、".join(
-            "第%d手 %s %s" % (m.ply, side_zh(m.side), m.notation) for m in recent
-        )
         if last is None:
             last_text = "无（对局开始）"
         else:
@@ -351,27 +348,21 @@ class LLMPlayer:
                 last.ply,
                 side_zh(last.side),
                 last.notation,
-                last.from_square,
-                last.to_square,
+                numeric_square(*last.frm),
+                numeric_square(*last.to),
             )
-        material = game.material()
         lines = [
             "第 %d 回合（第 %d 手），现在轮到你执%s方走棋。"
             % (game.fullmove, len(game.history) + 1, side_zh(self.side)),
-            "你是否被将军：%s" % ("是" if game.in_check() else "否"),
-            "上一步：%s" % last_text,
-            "最近着法：%s" % (recent_text or "暂无"),
-            "子力：红 %d，黑 %d" % (material[RED], material[BLACK]),
+            "对手上一步：%s" % last_text,
         ]
         if self.notes:
             lines.append("你的备忘：" + "；".join(self.notes[-6:]))
-        lines += [
-            "当前棋盘（大写=红方，小写=黑方）：",
-            game.ascii(),
-            "",
-            "请先用工具查看局面，用中文简要说明计划，然后调用 move(piece_id, to)。",
-        ]
-        return "\n".join(lines)
+        lines.append(
+            "棋盘和合法着法请用工具查询。"
+            "请用中文简要说明计划，然后调用 move(piece_id, to)。"
+        )
+        return chr(10).join(lines)
 
     def _summarise(self, outcome):
         data = dict(outcome)

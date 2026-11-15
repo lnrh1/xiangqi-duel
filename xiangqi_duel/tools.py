@@ -26,7 +26,6 @@ SIM_TOOLS = {
     "get_piece",
     "list_legal_moves",
     "get_status",
-    "get_history",
     "list_pieces_in_area",
     "describe_square",
 }
@@ -143,23 +142,6 @@ def tool_specs(allowed=None):
                 "parameters": {
                     "type": "object",
                     "properties": {},
-                    "additionalProperties": False,
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_history",
-                "description": "查看最近若干步着法（中文记谱、吃子以及双方留言）。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "last": {
-                            "type": "integer",
-                            "description": "返回最近多少步，默认 8。",
-                        }
-                    },
                     "additionalProperties": False,
                 },
             },
@@ -631,28 +613,6 @@ class ToolBox:
             "simulation": bool(self.sim),
             "sim_plies": self.sim.plies if self.sim else 0,
         }
-
-    def _t_get_history(self, last=8):
-        try:
-            last = max(1, min(int(last), 100))
-        except (TypeError, ValueError):
-            last = 8
-        moves = [
-            {
-                "ply": record.ply,
-                "side": record.side,
-                "piece_id": record.piece_id,
-                "from": numeric_square(*record.frm),
-                "to": numeric_square(*record.to),
-                "capture": record.capture,
-                "notation": record.notation,
-                "gave_check": record.gave_check,
-                "comment": record.comment,
-                "thinking": record.thinking,
-            }
-            for record in self.game.history[-last:]
-        ]
-        return {"ok": True, "moves": moves, "count": len(moves)}
 
     def _t_start_simulation(self):
         if self.game.status != "playing":

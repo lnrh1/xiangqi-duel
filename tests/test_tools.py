@@ -10,7 +10,7 @@ class ToolSpecTest(unittest.TestCase):
         names = [spec["function"]["name"] for spec in tool_specs()]
         for name in (
             "list_pieces", "get_piece", "list_legal_moves", "move", "get_status",
-            "get_history", "send_message", "offer_draw", "note", "resign",
+            "send_message", "offer_draw", "note", "resign",
             "list_pieces_in_area", "describe_square",
             "start_simulation", "end_simulation",
         ):
@@ -84,12 +84,6 @@ class ToolBoxTest(unittest.TestCase):
         self.assertFalse(self.box.call("nope")["ok"])
         self.assertFalse(self.box.call("get_piece", {})["ok"])
 
-    def test_get_history(self):
-        self.game.play("red_horse_1", "c2")
-        result = self.box.call("get_history", {"last": 5})
-        self.assertTrue(result["ok"])
-        self.assertEqual(result["count"], 1)
-        self.assertEqual(result["moves"][0]["notation"], "马八进七")
 
 
 class CoordinateToolsTest(unittest.TestCase):
