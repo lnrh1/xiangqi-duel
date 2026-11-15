@@ -130,12 +130,14 @@ class Match:
         game_id=None,
         players=None,
         enabled_tools=None,
+        free=False,
     ):
         self.id = game_id or uuid.uuid4().hex[:10]
         self.red_spec = red_spec
         self.black_spec = black_spec
         self.human_side = human_side
-        self.mode = "human" if human_side else "aivai"
+        self.free = bool(free)
+        self.mode = "free" if self.free else ("human" if human_side else "aivai")
         self.enabled_tools = list(enabled_tools) if enabled_tools else None
         self.pending_draw = None
         self.human_sim = None
@@ -159,7 +161,7 @@ class Match:
         }
         self.players = {}
         specs = {RED: red_spec, BLACK: black_spec}
-        for color in (RED, BLACK):
+        for color in (RED, BLACK) if not self.free else ():
             if color == human_side:
                 continue
             if players and color in players:
@@ -247,6 +249,9 @@ class Match:
 
     # ---------------------------------------------------------------- control
     def start(self, block=False):
+        if self.free:
+            self._broadcast({"type": "state", "snapshot": self.snapshot()})
+            return
         self.thread = threading.Thread(
             target=self._run, name="xiangqi-match-%s" % self.id, daemon=True
         )
@@ -468,6 +473,23 @@ class Match:
             snapshot = self.snapshot()
         self._broadcast({"type": "state", "snapshot": snapshot})
 
+    def free_move(self, piece_id, to):
+        with self.lock:
+            if self.game.status != "playing":
+                raise IllegalMove("对局已经结束")
+            piece = self.game.piece(piece_id)
+            if piece is None:
+                raise IllegalMove("没有棋子 %s" % (piece_id,))
+            saved_turn = self.game.turn
+            self.game.turn = piece.color
+            try:
+                record = self.game.play(piece_id, to, adjudicate=False)
+            except Exception:
+                self.game.turn = saved_turn
+                raise
+        self._broadcast({"type": "state", "snapshot": self.snapshot()})
+        return record
+
     def submit_human_move(self, piece_id, to):
         if self.human_side is None:
             raise IllegalMove("这场对局没有人类棋手")
@@ -559,6 +581,18 @@ class Match:
     def snapshot(self):
         with self.lock:
             snap = self.game.snapshot()
+            if self.free:
+                legal = {}
+                saved_turn = self.game.turn
+                try:
+                    for piece in list(self.game.board.pieces.values()):
+                        self.game.turn = piece.color
+                        targets = self.game.legal_moves(piece.id)
+                        if targets:
+                            legal[piece.id] = [move.to_str for move in targets]
+                finally:
+                    self.game.turn = saved_turn
+                snap["legal"] = legal
             snap.update(
                 {
                     "match_id": self.id,

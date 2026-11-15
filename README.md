@@ -13,6 +13,7 @@
 
 - **首页与选人**：主页 → 选择模式 → 两侧点选棋手 → 开局；设置页管理模型库、工具开关和外观
 - **两种对局**：AI 对战 AI（双方思考、工具调用、留言全部可见），以及对战 AI（AI 内部过程对你隐藏）
+- **自由模式**：不设回合限制，双方棋子都能走，适合摆局面、试招或录制演示
 - **棋手与模型解耦**：模型统一存在本地模型库，填 base_url / Key 后可「获取模型」下拉选择，红黑各挑一个
 - **稳定棋子编码**：`red_horse_1`、`black_advisor_2` 全局唯一，走子后编号不变
 - **13 个工具**：查询棋子、合法着法、格子攻防、局面状态、留言、和棋提议、备忘、认输；可在设置里逐个开关（`move` 必选）
@@ -106,6 +107,11 @@ xiangqi-duel models add --provider custom --model my-model --base-url https://ap
 
 右侧是棋手、棋谱 / 对话和聊天输入框；AI 的思考与工具调用不会出现在页面上，只显示它公开说的话。
 AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查看 token 统计。
+
+### 自由模式
+
+不设回合限制，点任意一方的棋子都能走；没有 AI、聊天和推演按钮，只有棋盘与棋谱。
+适合摆局面、试招，或者录制宣传素材。从首页的「自由模式」进入。
 
 ## 模型立绘
 
@@ -206,8 +212,9 @@ xiangqi-duel selftest
 | DELETE | /api/models/{id} | 删除模型 |
 | POST | /api/models/{id}/test | 连通性测试 |
 | GET | /api/models/discover | 按 base_url / Key 拉取模型列表 |
-| POST | /api/new | 开始对局 |
+| POST | /api/new | 开始对局（mode=free 进入自由模式） |
 | POST | /api/move | 人类走子 |
+| POST | /api/free/move | 自由模式走子（任意一方） |
 | POST | /api/say | 人类发言 |
 | POST | /api/resign | 人类认输 |
 | POST | /api/rematch | 再来一局 |

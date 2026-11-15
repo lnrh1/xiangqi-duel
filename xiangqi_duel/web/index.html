@@ -161,6 +161,8 @@
   .trace-panel .trace { flex: 1; overflow-y: auto; max-height: none; }
   .players-inline { display: flex; gap: 10px; width: min(66vh, 100%); }
   .players-inline.hidden { display: none; }
+  .sim-actions { display: flex; gap: 8px; }
+  .sim-actions.hidden { display: none; }
   .bottom-panel {
     width: min(66vh, 100%); background: var(--panel-2);
     border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px;
@@ -491,8 +493,8 @@
   .home-sub { color: var(--muted); letter-spacing: .2em; }
   .home-actions { display: flex; gap: 14px; margin-top: 10px; }
   .mode-cards {
-    display: grid; grid-template-columns: repeat(2, minmax(260px, 380px));
-    gap: 22px; width: min(860px, 100%);
+    display: grid; grid-template-columns: repeat(3, minmax(240px, 340px));
+    gap: 22px; width: min(1120px, 100%);
   }
   .mode-card {
     position: relative; text-align: left; padding: 24px; border-radius: 22px;
@@ -740,6 +742,14 @@
       <h3>AI 对战 AI</h3>
       <p>双方各自思考、随时互发消息，你全程观战，能看到思考与工具调用。</p>
     </button>
+
+    <button class="mode-card free" id="mode-free">
+      <div class="mode-art">
+        <span class="piece-glyph">帥</span><span class="mode-vs">+</span><span class="piece-glyph black">將</span>
+      </div>
+      <h3>自由模式</h3>
+      <p>不设回合限制，双方棋子都可以走；适合摆局面、试招或拍演示。</p>
+    </button>
   </div>
 </div>
 
@@ -972,7 +982,7 @@
     renderChat(snap);
     renderTrace(snap);
     var traceTab = $('tab-trace');
-    if (snap.mode === 'human') { traceTab.classList.add('hidden'); }
+    if (snap.mode === 'human' || snap.mode === 'free') { traceTab.classList.add('hidden'); }
     else { traceTab.classList.remove('hidden'); }
     var resignBtn = $('btn-resign');
     if (snap.mode === 'human' && snap.status === 'playing') { resignBtn.classList.remove('hidden'); }
@@ -980,14 +990,15 @@
     var finished = snap.status === 'finished';
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-rematch').classList.toggle('hidden', !finished);
-    var spectate = snap.mode !== 'human';
+    var spectate = snap.mode === 'aivai';
+    var free = snap.mode === 'free';
     var simAllowed;
     if (snap.tools === null || snap.tools === undefined) {
       simAllowed = state.tools === null || state.tools.indexOf('start_simulation') !== -1;
     } else {
       simAllowed = snap.tools.indexOf('start_simulation') !== -1;
     }
-    $('sim-actions').classList.toggle('hidden', spectate || snap.status !== 'playing' || !simAllowed);
+    $('sim-actions').classList.toggle('hidden', snap.mode !== 'human' || snap.status !== 'playing' || !simAllowed);
     var sims = snap.sims || {};
     if (snap.mode === 'human' && Date.now() < state.simIgnoreUntil) { sims = {}; }
     var simSide = null;
@@ -1013,15 +1024,20 @@
     $('col-red').classList.toggle('hidden', !spectate);
     $('col-black').classList.toggle('hidden', !spectate);
     $('btn-drawer').classList.toggle('hidden', !spectate);
-    $('chat-form').classList.toggle('hidden', snap.status !== 'playing');
+    $('chat-form').classList.toggle('hidden', free || snap.status !== 'playing');
+    var chatTab = document.querySelector('.tab[data-tab="chat"]');
+    if (chatTab) { chatTab.classList.toggle('hidden', free); }
+    if (free && state.tab === 'chat') { switchTab('moves'); }
     $('chat-hint').textContent = '';
     $('tab-trace').classList.add('hidden');
     fitBoard();
     if (!spectate) { $('side-panel').classList.remove('open'); }
     var subtitle = $('subtitle');
-    subtitle.textContent = snap.mode === 'human'
-      ? '人机对弈，你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
-      : '双 AI 对弈，实时观战';
+    subtitle.textContent = snap.mode === 'free'
+      ? '自由模式，双方棋子都可以走'
+      : (snap.mode === 'human'
+        ? '人机对弈，你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
+        : '双 AI 对弈，实时观战');
     var chatInput = $('chat-input');
     chatInput.disabled = false;
     chatInput.placeholder = snap.mode === 'human' ? '对 AI 说点什么…' : '以观众身份提醒 AI…';
@@ -1076,9 +1092,12 @@
     }
     fitBoard();
     var mine = snap.mode === 'human' && snap.turn === snap.human_side && snap.status === 'playing';
+    var freeMode = snap.mode === 'free';
     var pieceEls = piecesLayer.querySelectorAll('.piece');
     for (var i = 0; i < pieceEls.length; i += 1) {
-      var isMine = mine && pieceEls[i].dataset.color === snap.human_side;
+      var isMine = freeMode
+        ? !!((snap.legal || {})[pieceEls[i].dataset.id])
+        : (mine && pieceEls[i].dataset.color === snap.human_side);
       if (isMine) { pieceEls[i].classList.add('movable'); }
       else { pieceEls[i].classList.remove('movable'); }
     }
@@ -1095,7 +1114,9 @@
       dot.classList.add(snap.turn === 'red' ? 'red' : 'black');
       if (snap.thinking) { dot.classList.add('think'); }
       var who = snap.turn === 'red' ? '红方' : '黑方';
-      if (snap.mode === 'human' && snap.turn === snap.human_side) {
+      if (snap.mode === 'free') {
+        text.textContent = '自由模式：任意一方走棋';
+      } else if (snap.mode === 'human' && snap.turn === snap.human_side) {
         text.textContent = '轮到你（' + who + '）走棋';
       } else if (snap.thinking) {
         text.textContent = who + '正在思考…';
@@ -1293,6 +1314,13 @@
   }
 
   function renderPlayers(snap) {
+    if (snap.mode === 'free') {
+      $('players').innerHTML = '<div class="player free"><div class="avatar">棋</div>' +
+        '<div class="meta"><strong>自由模式</strong><span>双方棋子都可以走，不设回合</span></div></div>';
+      $('panel-head-red').innerHTML = '';
+      $('panel-head-black').innerHTML = '';
+      return;
+    }
     if (snap.mode === 'aivai') {
       $('panel-head-red').innerHTML = playerCard('red', snap);
       $('panel-head-black').innerHTML = playerCard('black', snap);
@@ -1458,9 +1486,21 @@
   // ---------------------------------------------------------------- human moves
   function handleSquare(name) {
     var snap = state.snapshot;
-    if (!snap || snap.mode !== 'human' || snap.status !== 'playing' || snap.turn !== snap.human_side) { return; }
+    if (!snap || snap.status !== 'playing') { return; }
     if (state.replay && state.replay.active) { return; }
     if (state.pendingMove) { return; }
+    if (snap.mode === 'free') {
+      var freeLegal = (snap.legal || {})[state.selected];
+      if (state.selected && freeLegal && freeLegal.indexOf(name) !== -1) {
+        sendFreeMove(state.selected, name);
+        return;
+      }
+      var freePiece = (snap.pieces || []).filter(function (p) { return p.square === name; })[0];
+      state.selected = freePiece && (snap.legal || {})[freePiece.id] ? freePiece.id : null;
+      renderBoard(snap);
+      return;
+    }
+    if (snap.mode !== 'human' || snap.turn !== snap.human_side) { return; }
     var legal = (snap.legal || {})[state.selected];
     if (state.selected && legal && legal.indexOf(name) !== -1) {
       sendMove(state.selected, name);
@@ -1474,6 +1514,22 @@
     }
     state.selected = null;
     renderBoard(snap);
+  }
+
+  async function sendFreeMove(pieceId, to) {
+    if (state.pendingMove) { return; }
+    var snap = state.snapshot;
+    if (!snap || snap.mode !== 'free' || snap.status !== 'playing') { return; }
+    state.pendingMove = true;
+    state.pendingPly = snap.ply;
+    state.selected = null;
+    renderBoard(snap);
+    try {
+      await api('/api/free/move', { method: 'POST', body: { piece_id: pieceId, to: to } });
+    } catch (err) {
+      state.pendingMove = false;
+      toast(err.message);
+    }
   }
 
   async function sendMove(pieceId, to) {
@@ -2609,6 +2665,19 @@
     updateLobby();
   }
 
+  async function startFreeMatch() {
+    try {
+      await api('/api/new', { method: 'POST', body: { mode: 'free' } });
+      state.selected = null;
+      state.pendingMove = false;
+      setScreen(null);
+      connectEvents();
+      await refreshState();
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
   async function startFromLobby() {
     var lobby = state.lobby;
     if (!lobby.red || !lobby.black) { return; }
@@ -2841,6 +2910,7 @@
     $('home-settings').addEventListener('click', openSettings);
     $('modes-back').addEventListener('click', showHome);
     $('mode-human').addEventListener('click', function () { openLobby('human'); });
+    $('mode-free').addEventListener('click', startFreeMatch);
     $('mode-ai').addEventListener('click', function () { openLobby('aivai'); });
     $('lobby-back').addEventListener('click', function () { setScreen('modes'); });
     $('side-red').addEventListener('click', function () { openPicker('red'); });
@@ -2959,6 +3029,14 @@
         }
         return;
       }
+      var snap = state.snapshot;
+      if (snap && snap.mode === 'free') {
+        if (state.selected && !state.pendingMove) {
+          event.stopPropagation();
+          sendFreeMove(state.selected, marker.getAttribute('data-square'));
+        }
+        return;
+      }
       if (!state.selected || state.pendingMove) { return; }
       event.stopPropagation();
       sendMove(state.selected, marker.getAttribute('data-square'));
@@ -2971,6 +3049,15 @@
       var snap = state.snapshot;
       if (!snap) { return; }
       var name = el.getAttribute('data-square');
+      if (snap.mode === 'free') {
+        var freeLegal = (snap.legal || {})[state.selected];
+        if (state.selected && freeLegal && freeLegal.indexOf(name) !== -1) {
+          sendFreeMove(state.selected, name);
+        } else {
+          handleSquare(name);
+        }
+        return;
+      }
       var legal = (snap.legal || {})[state.selected];
       if (state.selected && legal && legal.indexOf(name) !== -1 && state.selected !== el.getAttribute('data-id')) {
         sendMove(state.selected, name);

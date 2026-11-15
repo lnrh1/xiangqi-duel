@@ -118,6 +118,24 @@ class MatchTest(unittest.TestCase):
         finally:
             match.stop()
 
+    def test_free_mode_moves_both_sides(self):
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="human"),
+            free=True,
+            max_plies=300,
+        )
+        match.start()
+        snap = match.snapshot()
+        self.assertEqual(snap["mode"], "free")
+        self.assertIn("red_horse_1", snap["legal"])
+        self.assertIn("black_horse_1", snap["legal"])
+        match.free_move("red_horse_1", "c2")
+        match.free_move("black_horse_1", "c7")
+        self.assertEqual(len(match.game.history), 2)
+        self.assertEqual(match.game.status, "playing")
+        match.stop()
+
     def test_aivai_allows_spectator_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),

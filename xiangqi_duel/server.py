@@ -348,6 +348,16 @@ class Handler(BaseHTTPRequestHandler):
             if match is not None:
                 match.end_human_sim()
             self._json({"ok": True})
+        elif path == "/api/free/move":
+            match = self.state.current()
+            if match is None:
+                self._json({"ok": False, "error": "还没有对局"}, status=400)
+                return
+            try:
+                match.free_move(body.get("piece_id", ""), body.get("to", ""))
+                self._json({"ok": True})
+            except IllegalMove as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
         elif path == "/api/say":
             match = self.state.current()
             if match is None:
@@ -422,6 +432,22 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------- new match
     def _new_match(self, body):
+        if body.get("mode") == "free":
+            self.state.stop_match()
+            try:
+                match = Match(
+                    PlayerSpec(kind="human"),
+                    PlayerSpec(kind="human"),
+                    free=True,
+                    max_plies=300,
+                )
+                match.start()
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": "无法开始自由模式：%s" % exc}, status=400)
+                return
+            self.state.set_match(match)
+            self._json({"ok": True, "match_id": match.id, "snapshot": match.snapshot()})
+            return
         try:
             red = self.state.spec_for(body.get("red") or {})
             black = self.state.spec_for(body.get("black") or {})
