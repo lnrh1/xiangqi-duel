@@ -395,6 +395,10 @@ class LLMPlayer:
         )
 
 
+    def postgame_speak(self, system, messages):
+        result = self.client.chat(system, messages)
+        return (result.text or "").strip(), dict(result.usage or {})
+
     def reset_for_new_game(self, side=None):
         while True:
             try:

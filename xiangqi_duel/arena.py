@@ -140,6 +140,8 @@ class Match:
         self.mode = "free" if self.free else ("human" if human_side else "aivai")
         self.enabled_tools = list(enabled_tools) if enabled_tools else None
         self.pending_draw = None
+        self.draw_proposer = None
+        self.draw_by_user = False
         self.human_sim = None
         self.max_plies = max_plies
         self.game = Game(fen=fen, max_plies=max_plies)
@@ -288,7 +290,7 @@ class Match:
                     if self.game.status != "playing":
                         break
                     if len(self.game.history) >= self.max_plies:
-                        self.game.abort("达到最大手数，判和")
+                        self.game.declare_draw("达到最大手数，判和")
                         break
                     side = self.game.turn
                     self.thinking = side
@@ -360,6 +362,8 @@ class Match:
                         if self.pending_draw and self.pending_draw[0] != side:
                             self.game.declare_draw("双方同意和棋")
                             break
+                        if self.pending_draw is None:
+                            self.draw_proposer = side
                         self.pending_draw = (side, note)
                         self._broadcast({"type": "state", "snapshot": self.snapshot()})
 
@@ -400,36 +404,125 @@ class Match:
             self._broadcast({"type": "end", "result": result, "snapshot": snapshot})
             if result and not self.stop_event.is_set():
                 threading.Thread(
-                    target=self._farewell, name="farewell-%s" % self.id, daemon=True
+                    target=self._post_game, name="postgame-%s" % self.id, daemon=True
                 ).start()
 
-    def _farewell(self):
-        """Let both AIs say one closing line after the game."""
-        for side, player in list(self.players.items()):
-            say = getattr(player, "farewell", None)
-            if say is None:
-                continue
-            try:
-                with self.lock:
-                    view = self.game.clone()
-                text = (say(view) or "").strip()
-            except Exception:  # noqa: BLE001 - optional step
-                text = ""
-            if not text:
-                continue
+    def _post_game(self):
+        """赛后对话：胜者或提出和棋的一方先发言，各 3 条后结束。"""
+        try:
             with self.lock:
-                self.chat.append(
-                    {
-                        "side": side,
-                        "text": text,
-                        "at": time.time(),
-                        "ply": len(self.game.history) + 1,
-                    }
-                )
-            opponent = other(side)
-            if opponent in self.players:
-                self.players[opponent].inbox.put({"from": "opponent", "text": text})
-            self._broadcast({"type": "state", "snapshot": self.snapshot()})
+                result = dict(self.game.result or {})
+            if not result or self.stop_event.is_set():
+                return
+            if self.draw_by_user:
+                return
+            if result.get("code") == "aborted":
+                return
+            if len(self.players) != 2:
+                return
+            if not all(hasattr(player, "postgame_speak") for player in self.players.values()):
+                return
+            winner = result.get("winner")
+            starter = winner if winner in self.players else (self.draw_proposer or RED)
+            if starter not in self.players:
+                starter = RED if RED in self.players else BLACK
+            transcript = []
+            for index in range(6):
+                side = starter if index % 2 == 0 else other(starter)
+                player = self.players.get(side)
+                if player is None:
+                    break
+                sent = sum(1 for item in transcript if item["side"] == side)
+                remaining = max(0, 3 - sent)
+                system = self._post_game_system(side, result, starter, remaining, index)
+                user = self._post_game_user(result, transcript)
+                text, usage = player.postgame_speak(system, [{"role": "user", "content": user}])
+                text = (text or "").strip()[:280]
+                if not text:
+                    text = "……"
+                with self.lock:
+                    self.chat.append(
+                        {
+                            "side": side,
+                            "text": text,
+                            "at": time.time(),
+                            "ply": len(self.game.history) + 1,
+                            "postgame": True,
+                        }
+                    )
+                    for key in ("input", "output", "total", "cached"):
+                        self.usage[side][key] += int((usage or {}).get(key, 0) or 0)
+                transcript.append({"side": side, "text": text})
+                self._broadcast({"type": "state", "snapshot": self.snapshot()})
+                if self.stop_event.wait(0.8):
+                    return
+
+            # 最后再调用发起方一次，只读不回复；下一局前不再有往返。
+            starter_player = self.players.get(starter)
+            if starter_player is not None:
+                system = self._post_game_system(starter, result, starter, 0, 6, read_only=True)
+                user = self._post_game_user(result, transcript)
+                starter_player.postgame_speak(system, [{"role": "user", "content": user}])
+        except Exception as exc:  # noqa: BLE001
+            self._error("赛后对话异常：%s" % exc)
+
+    def _post_game_outcome(self, result):
+        code = result.get("code") or ""
+        reason = {
+            "checkmate": "将死", "stalemate": "困毙", "resign": "认输",
+            "agreement": "双方同意和棋", "threefold": "三次重复局面",
+            "perpetual": "长将", "sixty-move": "60 回合无吃子",
+            "insufficient": "子力不足", "aborted": "对局中止",
+        }.get(code, result.get("reason") or "")
+        winner = result.get("winner")
+        if winner:
+            return "%s方胜（%s）" % (COLOR_ZH.get(winner, winner), reason or "结束")
+        return "和棋" + ("（%s）" % reason if reason else "")
+
+    def _post_game_system(self, side, result, starter, remaining, index, read_only=False):
+        color = COLOR_ZH.get(side, side)
+        outcome = self._post_game_outcome(result)
+        if read_only:
+            return (
+                "对局已经结束：%s。你执%s方。赛后对话已经结束，现在请你只读上面的对话内容，"
+                "不要输出任何回复、评论或新消息；下一局开始前不会再有人给你回信。"
+                % (outcome, color)
+            )
+        if side == starter:
+            start_line = "你是本场赛后对话的发起方，由你先说。"
+        else:
+            start_line = "对方发起了赛后对话，你依次回应。"
+        if remaining <= 1:
+            last_line = (
+                "这是你的最后一条消息。发送后，如果对方还有最后一条，之后在下一局开始前不会再有新的回信；"
+                "请把想说的话说完。"
+            )
+        else:
+            last_line = "请珍惜剩余发言次数，不要重复已经说过的内容。"
+        template = chr(10).join([
+            "对局已经结束：%s。你执%s方。",
+            "现在是赛后对话，最多 3 轮，双方各 3 条，共 6 条。",
+            "%s",
+            "你还可以发送 %d 条消息。",
+            "%s",
+            "请用中文简短发言，不超过 80 字；可以复盘关键手、表达感想或回应对方。"
+            "不要使用工具，不要输出 JSON 或标题。",
+        ])
+        return template % (outcome, color, start_line, remaining, last_line)
+
+    def _post_game_user(self, result, transcript):
+        lines = ["对局结果：%s" % self._post_game_outcome(result)]
+        lines.append("总手数：%d" % len(self.game.history))
+        recent = self.game.history[-24:]
+        if recent:
+            lines.append("最近着法：" + " ".join(str(getattr(item, "notation", item)) for item in recent))
+        lines.append("此前的赛后对话：")
+        if not transcript:
+            lines.append("（还没有人发言）")
+        for item in transcript:
+            lines.append("%s方：%s" % (COLOR_ZH.get(item["side"], item["side"]), item["text"]))
+        lines.append("轮到你发言。")
+        return chr(10).join(lines)
 
     def _wait_human(self):
         while not self.stop_event.is_set():
@@ -470,6 +563,18 @@ class Match:
             if self.game.status != "playing":
                 return
             self.game.resign(side, reason)
+            snapshot = self.snapshot()
+        self._broadcast({"type": "state", "snapshot": snapshot})
+
+    def request_draw(self, side):
+        with self.lock:
+            if self.game.status != "playing":
+                return
+            if self.mode != "human" or side != self.human_side:
+                raise ValueError("只有人类一方可以求和")
+            self.draw_by_user = True
+            self.draw_proposer = side
+            self.game.declare_draw("人类求和")
             snapshot = self.snapshot()
         self._broadcast({"type": "state", "snapshot": snapshot})
 

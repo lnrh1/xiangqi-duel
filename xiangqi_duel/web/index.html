@@ -681,12 +681,12 @@
   <div class="top-actions">
     <button id="btn-new" class="btn primary">新对局</button>
     <button id="btn-resign" class="btn hidden">认输</button>
+    <button id="btn-draw" class="btn hidden">求和</button>
     <button id="btn-drawer" class="btn hidden">棋谱 / 对话</button>
     <button id="btn-rematch" class="btn hidden">再来一局</button>
     <button id="btn-replay" class="btn">复盘</button>
     <button id="btn-video" class="btn hidden">导出视频</button>
     <button id="btn-sound" class="btn">音效 关</button>
-    <button id="btn-stop" class="btn">停止</button>
   </div>
 </header>
 
@@ -843,12 +843,8 @@
       <h2>导出对局视频</h2>
       <button class="btn ghost" id="video-close">关闭</button>
     </div>
-    <label class="tool-toggle video-option">
-      <input type="checkbox" id="video-trace" checked>
-      <span><strong>包含思考与工具</strong><br><span class="hint">关闭后只保留棋局与特效</span></span>
-    </label>
     <div class="video-stage">
-      <canvas id="video-canvas" width="1280" height="760"></canvas>
+      <canvas id="video-canvas" width="1920" height="1140"></canvas>
       <video id="video-preview" class="hidden" controls playsinline></video>
     </div>
     <div class="video-actions">
@@ -945,6 +941,7 @@
     fxReady: false,
     matchId: null,
     mateShown: false,
+    postgameOpened: false,
     sound: false,
     pendingMove: false,
     pendingPly: -1,
@@ -1047,6 +1044,7 @@
       state.lastPly = -1;
       state.movesSignature = "";
       state.pendingMove = false;
+      state.postgameOpened = false;
       $('side-panel').classList.remove('open');
     }
     if (state.pendingMove && (snap.ply !== state.pendingPly || snap.turn !== snap.human_side)) {
@@ -1068,8 +1066,10 @@
     if (snap.mode === 'human' || snap.mode === 'free') { traceTab.classList.add('hidden'); }
     else { traceTab.classList.remove('hidden'); }
     var resignBtn = $('btn-resign');
-    if (snap.mode === 'human' && snap.status === 'playing') { resignBtn.classList.remove('hidden'); }
-    else { resignBtn.classList.add('hidden'); }
+    var drawBtn = $('btn-draw');
+    var humanPlaying = snap.mode === 'human' && snap.status === 'playing';
+    resignBtn.classList.toggle('hidden', !humanPlaying);
+    drawBtn.classList.toggle('hidden', !humanPlaying);
     var finished = snap.status === 'finished';
     $('btn-replay').classList.toggle('hidden', !finished);
     $('btn-video').classList.toggle('hidden', !finished);
@@ -1122,6 +1122,12 @@
       : (snap.mode === 'human'
         ? '人机对弈，你执' + (snap.human_side === 'red' ? '红' : '黑') + '方'
         : '双 AI 对弈，实时观战');
+    var hasPostgame = (snap.chat || []).some(function (item) { return item.postgame; });
+    if (!state.postgameOpened && snap.mode === 'aivai' && hasPostgame) {
+      state.postgameOpened = true;
+      $('side-panel').classList.add('open');
+      switchTab('chat');
+    }
     var chatInput = $('chat-input');
     chatInput.disabled = false;
     chatInput.placeholder = snap.mode === 'human' ? '对 AI 说点什么…' : '以观众身份提醒 AI…';
@@ -2956,6 +2962,22 @@
     return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
   }
 
+  function videoTiming(moveCount) {
+    var intro = 1.0;
+    var end = 3.5;
+    var per = 1.8;
+    var total = intro + moveCount * per + end;
+    if (total > 300) {
+      per = Math.max(0.1, (300 - intro - end) / Math.max(1, moveCount));
+    }
+    return {
+      intro: intro,
+      per: per,
+      end: end,
+      duration: intro + moveCount * per + end
+    };
+  }
+
   function videoGeometry() {
     return { bx: 40, by: 64, cell: 62, pad: 34, bw: 560, bh: 632 };
   }
@@ -3249,6 +3271,8 @@
 
   function drawVideoFrame(ctx, timeline, t) {
     var log = timeline.log;
+    var canvas = ctx.canvas;
+    ctx.setTransform(canvas.width / 1280, 0, 0, canvas.height / 760, 0, 0);
     ctx.clearRect(0, 0, 1280, 760);
     var bg = ctx.createLinearGradient(0, 0, 0, 760);
     bg.addColorStop(0, "#241b13");
@@ -3266,14 +3290,17 @@
     var index = Math.max(0, Math.min(moves.length - 1, Math.floor((t - intro) / per)));
     var inMove = t >= intro && index < moves.length && t < intro + moves.length * per;
     var local = inMove ? (t - intro - index * per) : 1;
+    var moveStart = per * 0.5;
+    var moveDur = per * 0.39;
+    var moveEnd = moveStart + moveDur;
     var current = inMove ? moves[index] : (moves.length ? moves[moves.length - 1] : null);
     var before = index > 0 ? moves[index - 1].fen : log.start_fen;
     var after = current ? current.fen : log.start_fen;
-    var fen = (inMove && local < 0.92) ? before : (current ? after : log.start_fen);
+    var fen = (inMove && local < moveEnd) ? before : (current ? after : log.start_fen);
     var last = current;
     var showBefore = inMove && local < 0.9;
     var moving = null;
-    if (inMove && local >= 0.42 && local < 0.95) {
+    if (inMove && local >= moveStart && local < moveEnd + 0.04) {
       var from = current.from;
       var to = current.to;
       var x1 = "abcdefghi".indexOf(from.charAt(0));
@@ -3286,11 +3313,11 @@
         moving = {
           piece: { x: x1, y: y1, ch: piece.ch, red: piece.red },
           x1: x1, y1: y1, x2: x2, y2: y2,
-          progress: videoEaseInOutQuad((local - 0.42) / 0.5)
+          progress: videoEaseInOutQuad((local - moveStart) / moveDur)
         };
       }
     }
-    var checkSide = inMove && local >= 0.42 && current && current.gave_check
+    var checkSide = inMove && local >= moveStart && current && current.gave_check
       ? (current.side === "red" ? "black" : "red") : null;
     drawVideoPieces(ctx, geo, fen, moving ? { x: moving.x1, y: moving.y1 } : null, moving, last, checkSide);
     videoText(ctx, "第 " + (movesDone || 0) + " / " + moves.length + " 手", 1240, 36, "14px 'Microsoft YaHei', sans-serif", "rgba(220, 205, 180, .8)", "right");
@@ -3318,15 +3345,16 @@
   }
 
   function videoPoster(log) {
-    var hasTrace = (log.trace || []).length > 0;
+    var moves = log.moves || [];
+    var timing = videoTiming(moves.length);
     var timeline = {
       log: log,
-      moves: log.moves || [],
-      intro: 0.8,
-      per: 1.05,
-      end: 3.2,
-      includeTrace: hasTrace,
-      duration: 0.8 + (log.moves || []).length * 1.05 + 3.2
+      moves: moves,
+      intro: timing.intro,
+      per: timing.per,
+      end: timing.end,
+      includeTrace: false,
+      duration: timing.duration
     };
     drawVideoFrame($('video-canvas').getContext('2d'), timeline, 0);
   }
@@ -3341,10 +3369,7 @@
     try {
       var log = await api('/api/log');
       state.video.log = log;
-      var hasTrace = (log.trace || []).length > 0;
-      $('video-trace').disabled = !hasTrace;
-      $('video-trace').checked = hasTrace;
-      $('video-status').textContent = hasTrace ? '默认包含思考与工具，可取消勾选' : '本局没有可导出的思考记录';
+      $('video-status').textContent = '最长 5 分钟，只包含棋局与终局特效';
       $('video-render').disabled = false;
       videoPoster(log);
     } catch (err) {
@@ -3359,22 +3384,23 @@
       return;
     }
     var log = state.video.log;
-    var includeTrace = $('video-trace').checked && (log.trace || []).length > 0;
+    var moves = log.moves || [];
+    var timing = videoTiming(moves.length);
     var timeline = {
       log: log,
-      moves: log.moves || [],
-      intro: 0.8,
-      per: 1.05,
-      end: 3.2,
-      includeTrace: includeTrace,
-      duration: 0.8 + (log.moves || []).length * 1.05 + 3.2
+      moves: moves,
+      intro: timing.intro,
+      per: timing.per,
+      end: timing.end,
+      includeTrace: false,
+      duration: timing.duration
     };
     state.video.rendering = true;
     $('video-render').disabled = true;
     $('video-close').disabled = true;
     $('video-preview').classList.add('hidden');
     $('video-download').classList.add('hidden');
-    $('video-status').textContent = '渲染中 0%';
+    $('video-status').textContent = '渲染中 0%（最长 5 分钟）';
     var canvas = $('video-canvas');
     var ctx = canvas.getContext('2d');
     var stream = canvas.captureStream(30);
@@ -3387,7 +3413,7 @@
     var chunks = [];
     var recorder;
     try {
-      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4000000 });
+      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10000000 });
     } catch (err) {
       state.video.rendering = false;
       $('video-render').disabled = false;
@@ -3400,14 +3426,14 @@
     recorder.start(250);
     var startTime = performance.now();
     await new Promise(function (resolve) {
-      function frame(now) {
-        var t = (now - startTime) / 1000;
+      function frame() {
+        var t = (performance.now() - startTime) / 1000;
         drawVideoFrame(ctx, timeline, Math.min(t, timeline.duration));
         $('video-status').textContent = '渲染中 ' + Math.min(99, Math.round(t / timeline.duration * 100)) + '%';
-        if (t < timeline.duration) { requestAnimationFrame(frame); }
+        if (t < timeline.duration) { setTimeout(frame, 33); }
         else { resolve(); }
       }
-      requestAnimationFrame(frame);
+      setTimeout(frame, 0);
     });
     recorder.stop();
     await stopped;
@@ -3586,6 +3612,10 @@
       api('/api/resign', { method: 'POST', body: {} }).catch(function (err) { toast(err.message); });
     });
 
+    $('btn-draw').addEventListener('click', function () {
+      api('/api/draw', { method: 'POST', body: {} }).catch(function (err) { toast(err.message); });
+    });
+
     $('btn-sound').addEventListener('click', function () {
       state.sound = !state.sound;
       $('btn-sound').textContent = state.sound ? '音效 开' : '音效 关';
@@ -3599,9 +3629,7 @@
       if (state.sound) { audioCtx(); }
     }, { once: true });
 
-    $('btn-stop').addEventListener('click', function () {
-      api('/api/stop', { method: 'POST', body: {} }).catch(function (err) { toast(err.message); });
-    });
+
 
     document.querySelectorAll('.tab').forEach(function (tab) {
       tab.addEventListener('click', function () { switchTab(tab.getAttribute('data-tab')); });

@@ -150,6 +150,48 @@ class MatchTest(unittest.TestCase):
         self.assertEqual(match.snapshot()["status"], "finished")
         match.stop()
 
+    def test_human_draw_is_immediate_and_skips_postgame(self):
+        match = Match(
+            PlayerSpec(kind="engine", depth=1),
+            PlayerSpec(kind="engine", depth=1),
+            human_side="red",
+        )
+        match.request_draw("red")
+        self.assertEqual(match.game.status, "finished")
+        self.assertEqual(match.game.result["code"], "agreement")
+        self.assertTrue(match.draw_by_user)
+        self.assertEqual(match.chat, [])
+        match.stop()
+
+    def test_postgame_dialogue_order_and_limit(self):
+        calls = []
+
+        class FakePlayer:
+            def __init__(self, side):
+                self.side = side
+
+            def postgame_speak(self, system, messages):
+                calls.append((self.side, system, messages))
+                return ("msg-%s-%d" % (self.side, len(calls)), {})
+
+        fake_red = FakePlayer("red")
+        fake_black = FakePlayer("black")
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="human"),
+            players={"red": fake_red, "black": fake_black},
+        )
+        match.game._finish("red", "checkmate", "checkmate")
+        match._post_game()
+        self.assertEqual(len(calls), 7)
+        self.assertEqual([call[0] for call in calls[:6]], ["red", "black", "red", "black", "red", "black"])
+        self.assertIn("只读", calls[-1][1])
+        self.assertEqual(len(match.chat), 6)
+        self.assertTrue(all(item.get("postgame") for item in match.chat))
+        self.assertIn("你还可以发送 3 条消息", calls[0][1])
+        self.assertIn("最后一条", calls[-2][1])
+        match.stop()
+
     def test_aivai_allows_spectator_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),
