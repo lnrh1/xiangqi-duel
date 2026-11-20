@@ -1376,26 +1376,9 @@
 
     var humanStage = $('art-stage-human');
     if (!humanStage) { return; }
-    var humanArt = null;
-    var humanSide = null;
-    if (snap && snap.mode === 'human' && state.artEnabled) {
-      humanSide = snap.human_side === 'red' ? 'black' : 'red';
-      humanArt = artInfo(snap.players ? snap.players[humanSide] : null);
-    }
-    var showHuman = humanArt && !(state.replay && state.replay.active);
-    if (!showHuman) {
-      humanStage.classList.remove('on');
-      humanStage.innerHTML = '';
-      hideArtInfo('human');
-      return;
-    }
-    var humanInfo = snap.players[humanSide];
-    var humanBusy = (humanInfo.kind === 'model' || humanInfo.kind === 'llm') &&
-      snap.status === 'playing' && snap.turn === humanSide;
-    humanStage.innerHTML = '<img src="' + (humanBusy ? humanArt.thinking : humanArt.normal) + '" alt="">';
-    humanStage.classList.add('on');
-    humanStage.classList.toggle('flip', humanSide === 'black');
-    layoutHumanArt();
+    humanStage.classList.remove('on');
+    humanStage.innerHTML = '';
+    hideArtInfo('human');
   }
 
   function renderPlayers(snap) {
