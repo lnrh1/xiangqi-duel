@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from .coords import in_palace, numeric_square, parse_coord, square as square_name
 from .game import IllegalMove
@@ -48,6 +49,61 @@ def tool_specs(allowed=None):
                 "parameters": {
                     "type": "object",
                     "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "define_tool",
+                "description": (
+                    "在当前对局中定义一个组合工具：把 1-8 个现有工具按顺序组合起来，"
+                    "自定义工具的参数可以用 ${参数名} 传给子工具。定义成功后立即可调用。"
+                    "steps 只能引用内置工具，不能包含 define_tool，也不能与现有工具重名。"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "新工具名，字母/数字/下划线，例如 get_information。",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "给模型自己看的新工具说明。",
+                        },
+                        "parameters": {
+                            "type": "object",
+                            "description": "新工具的参数定义，参数名到 JSON Schema 属性的映射。",
+                            "additionalProperties": True,
+                        },
+                        "required": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "必填参数名列表。",
+                        },
+                        "steps": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "description": "按顺序执行的子工具。",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "tool": {"type": "string", "description": "内置工具名。"},
+                                    "arguments": {
+                                        "type": "object",
+                                        "description": "子工具参数，可用 ${参数名} 引用自定义工具参数。",
+                                        "additionalProperties": True,
+                                    },
+                                },
+                                "required": ["tool"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": ["name", "description", "steps"],
                     "additionalProperties": False,
                 },
             },
@@ -315,14 +371,39 @@ class ToolBox:
         self.draw_offer = None
         self.notes = []
         self.allowed = set(allowed) if allowed else None
+        self.custom_tools = getattr(player, "custom_tools", None) if player is not None else None
+        if self.custom_tools is None:
+            self.custom_tools = {}
+            if player is not None:
+                player.custom_tools = self.custom_tools
 
     @property
     def sim(self):
         return getattr(self.player, "sim", None) if self.player is not None else None
 
+    def specs(self):
+        specs = tool_specs(self.allowed)
+        for name, definition in self.custom_tools.items():
+            specs.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": definition["description"],
+                        "parameters": definition["parameters"],
+                    },
+                }
+            )
+        return specs
+
     # ------------------------------------------------------------- dispatch
     def call(self, name, arguments=None):
-        if self.allowed is not None and name not in self.allowed and name != "move":
+        if (
+            self.allowed is not None
+            and name not in self.allowed
+            and name != "move"
+            and name not in self.custom_tools
+        ):
             return {"ok": False, "error": "工具 %s 已被对局设置禁用" % (name,)}
         if isinstance(arguments, str):
             text = arguments.strip()
@@ -359,6 +440,8 @@ class ToolBox:
         return self._dispatch(name, arguments)
 
     def _dispatch(self, name, arguments):
+        if name in self.custom_tools:
+            return self._t_custom_tool(name, arguments)
         handler = getattr(self, "_t_" + name, None)
         if handler is None:
             return {"ok": False, "error": "未知工具 %r" % (name,)}
@@ -404,6 +487,145 @@ class ToolBox:
         }
 
     # ---------------------------------------------------------------- tools
+    def _normalise_custom_schema(self, parameters, required):
+        if parameters is None:
+            properties = {}
+            schema = {"type": "object", "properties": {}, "additionalProperties": False}
+        elif (
+            isinstance(parameters, dict)
+            and parameters.get("type") == "object"
+            and isinstance(parameters.get("properties"), dict)
+        ):
+            schema = dict(parameters)
+            properties = dict(parameters.get("properties") or {})
+        elif isinstance(parameters, dict):
+            properties = dict(parameters)
+            schema = {
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": False,
+            }
+        else:
+            raise ValueError("parameters 必须是对象")
+        req = required if required is not None else schema.get("required") or []
+        if not isinstance(req, list):
+            raise ValueError("required 必须是参数名数组")
+        req = [str(item) for item in req]
+        for item in req:
+            if item not in properties:
+                raise ValueError("required 中的参数 %s 未在 parameters 中定义" % item)
+        if req:
+            schema["required"] = req
+        else:
+            schema.pop("required", None)
+        schema.setdefault("additionalProperties", False)
+        return schema
+
+    def _render_custom_arguments(self, value, params):
+        if isinstance(value, str):
+            exact = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", value)
+            if exact:
+                key = exact.group(1)
+                if key not in params:
+                    raise ValueError("缺少参数 %s" % key)
+                return params[key]
+
+            def replace(match):
+                key = match.group(1)
+                if key not in params:
+                    raise ValueError("缺少参数 %s" % key)
+                return str(params[key])
+
+            return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", replace, value)
+        if isinstance(value, dict):
+            return {str(k): self._render_custom_arguments(v, params) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._render_custom_arguments(item, params) for item in value]
+        return value
+
+    def _t_define_tool(self, name, description, parameters=None, required=None, steps=None):
+        name = str(name or "").strip()
+        description = str(description or "").strip()[:240]
+        if not name or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,40}", name):
+            return {"ok": False, "error": "工具名只能使用字母、数字、下划线，且以字母或下划线开头"}
+        if name in TOOL_NAMES or name in self.custom_tools:
+            return {"ok": False, "error": "工具名 %s 已被占用" % name}
+        if not description:
+            return {"ok": False, "error": "工具说明不能为空"}
+        if not isinstance(steps, list) or not steps:
+            return {"ok": False, "error": "steps 至少包含一个子工具"}
+        if len(steps) > 8:
+            return {"ok": False, "error": "steps 最多 8 个"}
+        if len(self.custom_tools) >= 16:
+            return {"ok": False, "error": "本局自定义工具数量已达上限"}
+
+        builtin = set(TOOL_NAMES)
+        normalised_steps = []
+        for step in steps:
+            if not isinstance(step, dict):
+                return {"ok": False, "error": "steps 的每一项必须是对象"}
+            tool = str(step.get("tool") or "").strip()
+            if tool == "define_tool":
+                return {"ok": False, "error": "自定义工具不能包含 define_tool（禁止自我嵌套）"}
+            if tool not in builtin:
+                return {
+                    "ok": False,
+                    "error": "子工具 %s 不存在；只能组合内置工具，不能嵌套自定义工具" % tool,
+                }
+            if self.allowed is not None and tool not in self.allowed and tool != "move":
+                return {"ok": False, "error": "子工具 %s 已被对局设置禁用" % tool}
+            arguments = step.get("arguments") or {}
+            if not isinstance(arguments, dict):
+                return {"ok": False, "error": "子工具 %s 的 arguments 必须是对象" % tool}
+            normalised_steps.append({"tool": tool, "arguments": arguments})
+
+        try:
+            schema = self._normalise_custom_schema(parameters, required)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+        definition = {
+            "name": name,
+            "description": description,
+            "parameters": schema,
+            "steps": normalised_steps,
+        }
+        self.custom_tools[name] = definition
+        return {
+            "ok": True,
+            "name": name,
+            "parameters": schema,
+            "steps": normalised_steps,
+            "note": "已定义，可在下一步直接调用 %s。" % name,
+        }
+
+    def _t_custom_tool(self, name, arguments):
+        definition = self.custom_tools.get(name)
+        if definition is None:
+            return {"ok": False, "error": "未知工具 %r" % (name,)}
+        args = arguments or {}
+        if not isinstance(args, dict):
+            return {"ok": False, "error": "arguments 必须是对象"}
+        for key in definition["parameters"].get("required") or []:
+            if key not in args:
+                return {"ok": False, "error": "缺少必填参数 %s" % key}
+        results = []
+        for step in definition["steps"]:
+            try:
+                sub_args = self._render_custom_arguments(step.get("arguments") or {}, args)
+            except ValueError as exc:
+                return {"ok": False, "error": str(exc)}
+            outcome = self.call(step["tool"], sub_args)
+            results.append(
+                {
+                    "tool": step["tool"],
+                    "arguments": sub_args,
+                    "result": outcome,
+                }
+            )
+        ok = all(bool(item["result"].get("ok")) for item in results)
+        return {"ok": ok, "tool": name, "results": results, "count": len(results)}
+
     def _t_list_pieces(self, color="both"):
         color = str(color).lower()
         if color not in ("both", "red", "black"):

@@ -12,9 +12,69 @@ class ToolSpecTest(unittest.TestCase):
             "list_pieces", "get_piece", "list_legal_moves", "move", "get_status",
             "send_message", "offer_draw", "note", "resign",
             "list_pieces_in_area", "describe_square",
-            "start_simulation", "end_simulation",
+            "start_simulation", "end_simulation", "define_tool",
         ):
             self.assertIn(name, names)
+
+
+class CustomToolTest(unittest.TestCase):
+    def setUp(self):
+        self.box = ToolBox(Game(), "red")
+
+    def define(self, **overrides):
+        payload = {
+            "name": "get_information",
+            "description": "查询指定一方棋子和当前局面",
+            "parameters": {
+                "color": {"type": "string", "description": "red/black/both"},
+            },
+            "required": ["color"],
+            "steps": [
+                {"tool": "list_pieces", "arguments": {"color": "${color}"}},
+                {"tool": "get_status", "arguments": {}},
+            ],
+        }
+        payload.update(overrides)
+        return self.box.call("define_tool", payload)
+
+    def test_define_and_call(self):
+        result = self.define()
+        self.assertTrue(result["ok"], result)
+        names = [spec["function"]["name"] for spec in self.box.specs()]
+        self.assertIn("get_information", names)
+        out = self.box.call("get_information", {"color": "red"})
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([item["tool"] for item in out["results"]], ["list_pieces", "get_status"])
+        self.assertTrue(all(piece["color"] == "red" for piece in out["results"][0]["result"]["pieces"]))
+
+    def test_parameter_substitution_and_required(self):
+        result = self.define()
+        self.assertTrue(result["ok"])
+        self.assertFalse(self.box.call("get_information", {})["ok"])
+        out = self.box.call("get_information", {"color": "black"})
+        self.assertTrue(out["ok"])
+        self.assertTrue(all(piece["color"] == "black" for piece in out["results"][0]["result"]["pieces"]))
+
+    def test_rejects_define_tool_inside(self):
+        result = self.define(
+            steps=[{"tool": "define_tool", "arguments": {}}],
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("define_tool", result["error"])
+
+    def test_rejects_duplicate_and_unknown_names(self):
+        self.assertTrue(self.define()["ok"])
+        self.assertFalse(self.define()["ok"])
+        self.assertFalse(self.define(name="list_pieces")["ok"])
+        self.assertFalse(self.define(name="not valid")["ok"])
+
+    def test_rejects_nested_custom_tool(self):
+        self.assertTrue(self.define()["ok"])
+        result = self.define(
+            name="wrapper",
+            steps=[{"tool": "get_information", "arguments": {"color": "red"}}],
+        )
+        self.assertFalse(result["ok"])
 
 
 class ToolBoxTest(unittest.TestCase):
