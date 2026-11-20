@@ -55,6 +55,19 @@ class CustomToolTest(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertTrue(all(piece["color"] == "black" for piece in out["results"][0]["result"]["pieces"]))
 
+    def test_define_tool_can_be_disabled(self):
+        box = ToolBox(Game(), "red", allowed={"move", "list_pieces"})
+        result = box.call(
+            "define_tool",
+            {
+                "name": "get_information",
+                "description": "x",
+                "steps": [{"tool": "list_pieces", "arguments": {}}],
+            },
+        )
+        self.assertFalse(result["ok"])
+        self.assertNotIn("define_tool", [spec["function"]["name"] for spec in box.specs()])
+
     def test_rejects_define_tool_inside(self):
         result = self.define(
             steps=[{"tool": "define_tool", "arguments": {}}],
