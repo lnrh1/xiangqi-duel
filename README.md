@@ -185,6 +185,8 @@ AI 的立绘显示在侧栏下方，思考时切换状态；点击立绘可查�
 | `list_pieces_in_area` | 按坐标范围列出棋子 | `{"x_min": 1, "x_max": 5, "y_min": 1, "y_max": 5}` |
 | `describe_square` | 单格信息：棋子、九宫、被哪方攻击 | `{"square": "8-2"}` |
 
+define_tool 定义的自定义工具属于该 AI；开新对局会清空，「再来一局」会保留。
+
 ## 棋子编码
 
 - 红方：`red_chariot_1`、`red_horse_1`、`red_elephant_1`、`red_advisor_1`、`red_general`、`red_cannon_1`、`red_soldier_1`

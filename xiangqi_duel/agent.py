@@ -410,7 +410,6 @@ class LLMPlayer:
                 break
         self.blocks = []
         self.notes = []
-        self.custom_tools = {}
         self.usage_total = {"input": 0, "output": 0, "total": 0, "cached": 0}
         self.context_tokens = 0
         self.sim = None

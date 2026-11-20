@@ -30,6 +30,14 @@ def config():
 
 
 class LLMPlayerTest(unittest.TestCase):
+    def test_custom_tools_survive_rematch_reset(self):
+        player = LLMPlayer("red", FakeClient([]), config())
+        player.custom_tools = {"get_information": {"name": "get_information"}}
+        player.notes = ["旧笔记"]
+        player.reset_for_new_game()
+        self.assertIn("get_information", player.custom_tools)
+        self.assertEqual(player.notes, [])
+
     def test_full_turn(self):
         client = FakeClient(
             [
