@@ -11,10 +11,33 @@ import os
 import time
 import uuid
 
-from .llm import PRESETS, ProviderConfig, make_client
+from .llm import PRESETS, ProviderConfig, make_client, normalise_effort
 
 DEFAULT_HOME = os.path.join(os.path.expanduser("~"), ".xiangqi-duel")
 DEFAULT_PATH = os.path.join(DEFAULT_HOME, "models.json")
+
+
+def _json_object(value, label):
+    if value in (None, ""):
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError as exc:
+            raise RegistryError("%s 必须是 JSON 对象：%s" % (label, exc))
+        if isinstance(parsed, dict):
+            return parsed
+    raise RegistryError("%s 必须是 JSON 对象" % label)
+
+
+def _int_value(value, default, low, high):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(low, min(high, number))
 
 
 class RegistryError(ValueError):
@@ -68,6 +91,11 @@ class ModelRegistry:
             "label": entry.get("label") or "%s · %s" % (provider, model),
             "base_url": entry.get("base_url") or preset.get("base_url", ""),
             "temperature": entry.get("temperature", 0.6),
+            "max_tokens": entry.get("max_tokens", 1200),
+            "reasoning_effort": entry.get("reasoning_effort", ""),
+            "thinking_budget": entry.get("thinking_budget", 0),
+            "extra_body": entry.get("extra_body") or {},
+            "extra_headers": entry.get("extra_headers") or {},
             "has_key": bool(entry.get("api_key")),
             "created_at": entry.get("created_at"),
         }
@@ -85,7 +113,20 @@ class ModelRegistry:
         return None
 
     # ---------------------------------------------------------------- mutate
-    def add(self, provider, model="", api_key="", base_url="", label="", temperature=0.6):
+    def add(
+        self,
+        provider,
+        model="",
+        api_key="",
+        base_url="",
+        label="",
+        temperature=0.6,
+        max_tokens=1200,
+        reasoning_effort="",
+        thinking_budget=0,
+        extra_body=None,
+        extra_headers=None,
+    ):
         provider = str(provider or "").strip()
         if provider not in PRESETS and not str(base_url or "").strip():
             raise RegistryError(
@@ -105,6 +146,10 @@ class ModelRegistry:
             temperature = float(temperature)
         except (TypeError, ValueError):
             temperature = 0.6
+        effort = str(reasoning_effort or "").strip().lower()
+        normalised_effort = normalise_effort(effort)
+        if effort and not normalised_effort:
+            raise RegistryError("思考档位只能是 off/minimal/low/medium/high/max")
         entry = {
             "id": "m-" + uuid.uuid4().hex[:8],
             "provider": provider,
@@ -113,9 +158,55 @@ class ModelRegistry:
             "base_url": str(base_url or "").strip(),
             "label": str(label or "").strip(),
             "temperature": max(0.0, min(2.0, temperature)),
+            "max_tokens": _int_value(max_tokens, 1200, 1, 128000),
+            "reasoning_effort": normalised_effort,
+            "thinking_budget": _int_value(thinking_budget, 0, 0, 128000),
+            "extra_body": _json_object(extra_body, "extra_body"),
+            "extra_headers": _json_object(extra_headers, "extra_headers"),
             "created_at": time.time(),
         }
         self._models.append(entry)
+        self.save()
+        return entry
+
+    def update(self, model_id, **fields):
+        entry = self.get(model_id)
+        for key in (
+            "provider", "model", "base_url", "label", "temperature",
+            "max_tokens", "reasoning_effort", "thinking_budget",
+            "extra_body", "extra_headers",
+        ):
+            if key not in fields:
+                continue
+            value = fields[key]
+            if key in ("extra_body", "extra_headers"):
+                entry[key] = _json_object(value, key)
+            elif key == "temperature":
+                try:
+                    entry[key] = max(0.0, min(2.0, float(value)))
+                except (TypeError, ValueError):
+                    entry[key] = 0.6
+            elif key == "max_tokens":
+                entry[key] = _int_value(value, 1200, 1, 128000)
+            elif key == "thinking_budget":
+                entry[key] = _int_value(value, 0, 0, 128000)
+            elif key == "reasoning_effort":
+                raw = str(value or "").strip().lower()
+                normalised = normalise_effort(raw)
+                if raw and not normalised:
+                    raise RegistryError("思考档位只能是 off/minimal/low/medium/high/max")
+                entry[key] = normalised
+            elif key == "provider":
+                provider = str(value or "").strip()
+                if provider not in PRESETS and not str(entry.get("base_url") or "").strip():
+                    raise RegistryError("未知提供商 %r" % provider)
+                entry[key] = provider
+            else:
+                entry[key] = str(value or "").strip()
+        if fields.get("api_key"):
+            entry["api_key"] = str(fields["api_key"]).strip()
+        if not str(entry.get("model") or "").strip():
+            raise RegistryError("模型名称不能为空")
         self.save()
         return entry
 
@@ -157,6 +248,11 @@ class ModelRegistry:
             api_key=entry.get("api_key", ""),
             base_url=entry.get("base_url", ""),
             temperature=entry.get("temperature", 0.6),
+            max_tokens=entry.get("max_tokens", 1200),
+            reasoning_effort=entry.get("reasoning_effort", ""),
+            thinking_budget=entry.get("thinking_budget", 0),
+            extra_body=entry.get("extra_body") or {},
+            extra_headers=entry.get("extra_headers") or {},
         ).resolved()
 
     def test(self, model_id, timeout=45.0):

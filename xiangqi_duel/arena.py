@@ -5,7 +5,7 @@ import queue
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .agent import AgentDecision, EnginePlayer, LLMPlayer
 from .game import Game, IllegalMove
@@ -29,6 +29,11 @@ class PlayerSpec:
     temperature: float = 0.6
     depth: int = 3
     time_limit: float = 5.0
+    max_tokens: int = 1200
+    reasoning_effort: str = ""
+    thinking_budget: int = 0
+    extra_body: dict = field(default_factory=dict)
+    extra_headers: dict = field(default_factory=dict)
     label: str = ""
 
     @classmethod
@@ -66,6 +71,11 @@ class PlayerSpec:
             temperature=temperature,
             depth=depth,
             time_limit=time_limit,
+            max_tokens=data.get("max_tokens", 1200),
+            reasoning_effort=str(data.get("reasoning_effort") or ""),
+            thinking_budget=data.get("thinking_budget", 0),
+            extra_body=dict(data.get("extra_body") or {}) if isinstance(data.get("extra_body"), dict) else {},
+            extra_headers=dict(data.get("extra_headers") or {}) if isinstance(data.get("extra_headers"), dict) else {},
             label=str(data.get("label") or ""),
         )
 
@@ -82,6 +92,9 @@ class PlayerSpec:
             "model": self.model or preset.get("model", ""),
             "label": self.label or "%s · %s" % (self.provider, self.model or preset.get("model", "")),
             "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "reasoning_effort": self.reasoning_effort,
+            "thinking_budget": self.thinking_budget,
             "has_api_key": bool(self.api_key),
         }
 
@@ -104,6 +117,11 @@ class PlayerSpec:
             api_key=self.api_key,
             base_url=self.base_url,
             temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            reasoning_effort=self.reasoning_effort,
+            thinking_budget=self.thinking_budget,
+            extra_body=self.extra_body,
+            extra_headers=self.extra_headers,
         ).resolved()
         if not config.api_key and preset.get("kind") != "engine":
             raise ValueError(

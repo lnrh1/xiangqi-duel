@@ -79,6 +79,37 @@ class ServerTest(unittest.TestCase):
         status, data = self.call("/api/models")
         self.assertEqual(data["models"], [])
 
+    def test_02b_model_config_update(self):
+        status, data = self.call(
+            "/api/models",
+            "POST",
+            {
+                "provider": "custom",
+                "model": "cfg-test",
+                "api_key": "secret",
+                "base_url": "http://127.0.0.1:9/v1",
+                "reasoning_effort": "high",
+                "max_tokens": 9000,
+                "extra_body": {"top_p": 0.9},
+            },
+        )
+        self.assertEqual(status, 200, data)
+        model_id = data["model"]["id"]
+        self.assertEqual(data["model"]["max_tokens"], 9000)
+        self.assertEqual(data["model"]["reasoning_effort"], "high")
+        status, data = self.call(
+            "/api/models/" + model_id,
+            "POST",
+            {"reasoning_effort": "low", "max_tokens": 8000},
+        )
+        self.assertEqual(status, 200, data)
+        self.assertEqual(data["model"]["reasoning_effort"], "low")
+        self.assertEqual(data["model"]["max_tokens"], 8000)
+        self.assertTrue(data["model"]["has_key"])
+        self.assertEqual(data["model"]["extra_body"], {"top_p": 0.9})
+        status, _ = self.call("/api/models/" + model_id, "DELETE")
+        self.assertEqual(status, 200)
+
     def test_03_engine_match_and_events(self):
         status, data = self.call(
             "/api/new",

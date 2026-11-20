@@ -94,6 +94,31 @@ xiangqi-duel serve --port 8765
 xiangqi-duel models add --provider custom --model my-model --base-url https://api.example.com/v1 --api-key sk-xxx
 ```
 
+## 思考档位与请求覆盖
+
+模型库编辑框支持每个模型单独设置：
+
+- **思考档位**：默认 / 关闭 / 最低 / 低 / 中 / 高 / 最高
+- **思考预算**：Anthropic 的 budget_tokens，或 Qwen/GLM 支持的 thinking_budget
+- **max_tokens**：单模型输出上限
+- **请求体覆盖**：JSON 对象，最后深度合并进请求体，可覆盖任何字段
+- **额外请求头**：JSON 对象，合并进 HTTP headers
+
+内置提供商按官方协议自动映射：
+
+| provider | 自动适配 |
+|---|---|
+| deepseek | 顶层 `thinking` + `reasoning_effort`（low/high/max）；思考模式忽略 temperature |
+| openai | 推理模型用 `reasoning_effort`（minimal/low/medium/high）和 `max_completion_tokens`，不再传 temperature/max_tokens |
+| dashscope | `enable_thinking` + `thinking_budget`；qwen4-max 映射 reasoning_effort low/medium/xhigh |
+| anthropic | `thinking: {type: enabled, budget_tokens}`，并自动保证 max_tokens 大于预算、移除 temperature |
+| moonshot | Kimi K3 系列用顶层 `reasoning_effort`（low/high/max）；K2 思考系列用 `thinking` |
+| zhipu | `thinking.type` + `reasoning_effort`；GLM-5.3 强制开启思考，关闭档位会降为 low |
+
+聚合商（siliconflow、openrouter）和自定义 base_url 不做自动推断，避免把某个模型的参数套到另一个模型；需要时直接用「请求体覆盖」写对应参数。Ollama 也走自定义覆盖（如 `{"think": true}`）。
+
+参考官方文档：DeepSeek Thinking Mode、阿里云百炼 OpenAI 兼容参数、OpenAI Chat Completions、Anthropic Extended Thinking、Kimi 思考模型、智谱 GLM 思考参数。
+
 ## 对局模式
 
 ### AI 对战 AI

@@ -55,6 +55,10 @@ class ProviderConfig:
     temperature: float = 0.6
     max_tokens: int = 1200
     timeout: float = 120.0
+    reasoning_effort: str = ""
+    thinking_budget: int = 0
+    extra_body: dict = field(default_factory=dict)
+    extra_headers: dict = field(default_factory=dict)
 
     def resolved(self):
         preset = PRESETS.get(self.provider)
@@ -82,6 +86,11 @@ class ProviderConfig:
             "provider": self.provider,
             "model": self.model,
             "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "reasoning_effort": self.reasoning_effort,
+            "thinking_budget": self.thinking_budget,
+            "extra_body": self.extra_body,
+            "extra_headers": self.extra_headers,
             "base_url": self.base_url or (PRESETS.get(self.provider, {}) or {}).get("base_url", ""),
             "has_api_key": bool(self.api_key),
         }
@@ -165,6 +174,137 @@ class ChatResult:
     tool_calls: list = field(default_factory=list)
     usage: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
+
+
+REASONING_LEVELS = ("", "off", "minimal", "low", "medium", "high", "max")
+
+
+def normalise_effort(value):
+    text = str(value or "").strip().lower()
+    if text in ("", "auto", "default", "inherit"):
+        return ""
+    if text in ("none", "off", "disabled", "disable"):
+        return "off"
+    if text in ("minimal", "minimum", "min"):
+        return "minimal"
+    if text in ("low", "light"):
+        return "low"
+    if text in ("medium", "mid", "normal"):
+        return "medium"
+    if text in ("high", "deep"):
+        return "high"
+    if text in ("max", "maximum", "xhigh", "ultra"):
+        return "max"
+    return ""
+
+
+def deep_merge(base, extra):
+    if not isinstance(extra, dict):
+        return base
+    for key, value in extra.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def _is_openai_reasoning(model):
+    name = str(model or "").lower()
+    for prefix in ("o1", "o3", "o4", "gpt-5"):
+        if name.startswith(prefix) or ("-" + prefix) in name:
+            return True
+    return False
+
+
+def _effort_low_high_max(effort):
+    return {"minimal": "low", "low": "low", "medium": "high", "high": "high", "max": "max", "off": "low"}.get(effort, "high")
+
+
+def _effort_low_high_xhigh(effort):
+    return {"minimal": "low", "low": "low", "medium": "medium", "high": "xhigh", "max": "xhigh"}.get(effort, "medium")
+
+
+def _effort_openai(effort):
+    return {"minimal": "minimal", "low": "low", "medium": "medium", "high": "high", "max": "high", "off": "none"}.get(effort, "medium")
+
+
+def apply_openai_options(payload, config):
+    """Apply provider-specific thinking parameters, then user overrides."""
+    provider = str(config.provider or "")
+    model = str(config.model or "").lower()
+    effort = normalise_effort(config.reasoning_effort)
+    budget = int(config.thinking_budget or 0)
+
+    if provider == "deepseek":
+        if effort:
+            payload["thinking"] = {"type": "disabled" if effort == "off" else "enabled"}
+            if effort != "off":
+                payload["reasoning_effort"] = _effort_low_high_max(effort)
+                payload.pop("temperature", None)
+    elif provider == "dashscope":
+        if effort:
+            enabled = effort != "off"
+            payload["enable_thinking"] = enabled
+            if budget > 0 and enabled:
+                payload["thinking_budget"] = budget
+            if enabled and model.startswith("qwen4-max"):
+                payload["reasoning_effort"] = _effort_low_high_xhigh(effort)
+            elif enabled and "deepseek-v4" in model:
+                payload["reasoning_effort"] = _effort_low_high_max(effort)
+        elif budget > 0:
+            payload["enable_thinking"] = True
+            payload["thinking_budget"] = budget
+    elif provider == "openai":
+        reasoning = _is_openai_reasoning(model) or (bool(effort) and effort != "off")
+        if reasoning:
+            if effort and effort != "off":
+                payload["reasoning_effort"] = _effort_openai(effort)
+            elif effort == "off" and "gpt-5.1" in model:
+                payload["reasoning_effort"] = "none"
+            if "max_tokens" in payload:
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
+            payload.pop("temperature", None)
+    elif provider == "moonshot":
+        if effort:
+            if "kimi-k3" in model:
+                payload["reasoning_effort"] = _effort_low_high_max(effort)
+            elif "k2" in model or "thinking" in model:
+                payload["thinking"] = {"type": "disabled" if effort == "off" else "enabled"}
+    elif provider == "zhipu":
+        if effort:
+            always = "glm-5.3" in model
+            disabled = effort == "off" and not always
+            payload["thinking"] = {"type": "disabled" if disabled else "enabled"}
+            if not disabled and ("glm-5.3" in model or "glm-5" in model):
+                payload["reasoning_effort"] = _effort_low_high_max(effort)
+            if budget > 0 and not disabled:
+                payload["thinking_budget"] = budget
+
+    if config.extra_body:
+        deep_merge(payload, config.extra_body)
+    return payload
+
+
+def apply_anthropic_options(payload, config):
+    effort = normalise_effort(config.reasoning_effort)
+    budget = int(config.thinking_budget or 0)
+    if effort == "off":
+        enabled = False
+    elif effort or budget > 0:
+        enabled = True
+    else:
+        enabled = False
+    if enabled:
+        if budget <= 0:
+            budget = {"minimal": 1024, "low": 1024, "medium": 4096, "high": 8192, "max": 16384}.get(effort, 4096)
+        budget = max(1024, budget)
+        payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        payload["max_tokens"] = max(int(payload.get("max_tokens") or 1200), budget + 1024)
+        payload.pop("temperature", None)
+    if config.extra_body:
+        deep_merge(payload, config.extra_body)
+    return payload
 
 
 def normalise_usage(usage):
@@ -302,6 +442,8 @@ class OpenAIClient:
         if self.config.provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/lnrh1/xiangqi-duel"
             headers["X-Title"] = "xiangqi-duel"
+        if self.config.extra_headers:
+            headers.update({str(k): str(v) for k, v in self.config.extra_headers.items()})
         return headers
 
     def chat(self, system, messages, tools=None, on_delta=None):
@@ -315,6 +457,7 @@ class OpenAIClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        apply_openai_options(payload, self.config)
         url = self.base_url + "/chat/completions"
         if on_delta is not None:
             try:
@@ -429,6 +572,8 @@ class AnthropicClient:
         }
         if self.config.api_key:
             headers["x-api-key"] = self.config.api_key
+        if self.config.extra_headers:
+            headers.update({str(k): str(v) for k, v in self.config.extra_headers.items()})
         return headers
 
     def chat(self, system, messages, tools=None, on_delta=None):
@@ -448,6 +593,7 @@ class AnthropicClient:
                 }
                 for item in tools
             ]
+        apply_anthropic_options(payload, self.config)
         if on_delta is not None:
             try:
                 return self._stream(payload, on_delta)

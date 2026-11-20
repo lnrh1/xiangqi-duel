@@ -355,6 +355,12 @@
   .model-row .test-bad { color: var(--error); font-size: 12px; }
   .add-model { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
   .add-model input, .add-model select { flex: 1 1 150px; }
+  .add-model textarea {
+    flex: 1 1 100%; min-height: 52px; resize: vertical;
+    background: #191410; border: 1px solid var(--line); color: var(--text);
+    padding: 9px 10px; border-radius: 9px; outline: none; font-family: inherit; font-size: 13px;
+  }
+  .add-model textarea:focus { border-color: var(--accent); }
   .add-model button { flex: none; }
   .suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .suggestion {
@@ -881,9 +887,25 @@
         <input id="add-key" type="password" placeholder="API Key">
         <input id="add-model" placeholder="模型 ID">
         <input id="add-label" placeholder="备注（可选）">
+        <input id="add-temperature" type="number" step="0.1" min="0" max="2" placeholder="温度（默认 0.6）">
+        <input id="add-max-tokens" type="number" placeholder="max_tokens（默认 1200）">
+        <select id="add-effort" title="思考档位">
+          <option value="">思考档位：默认</option>
+          <option value="off">关闭思考</option>
+          <option value="minimal">最低</option>
+          <option value="low">低</option>
+          <option value="medium">中</option>
+          <option value="high">高</option>
+          <option value="max">最高</option>
+        </select>
+        <input id="add-budget" type="number" placeholder="思考预算 tokens（可选）">
+        <textarea id="add-extra-body" placeholder='请求体覆盖 JSON，例如 {"top_p":0.9}'></textarea>
+        <textarea id="add-extra-headers" placeholder='额外请求头 JSON（可选）'></textarea>
         <button class="btn" id="btn-discover">获取模型</button>
         <button class="btn primary" id="btn-add-model">添加</button>
+        <button class="btn hidden" id="btn-cancel-model">取消编辑</button>
       </div>
+      <p class="hint">思考档位会按提供商自动映射；请求体覆盖最后合并，可放 top_p、chat_template_kwargs 等。</p>
       <div class="suggestions" id="model-suggestions"></div>
       <p class="hint" id="add-result"></p>
     </section>
@@ -931,6 +953,7 @@
   var state = {
     models: [],
     providers: [],
+    editingModelId: null,
     snapshot: null,
     selected: null,
     tab: 'moves',
@@ -956,6 +979,7 @@
     toolCatalog: [],
     openTraces: {},
     movesSignature: "",
+    traceSignature: "",
     lastTurn: null,
     settingsFromHome: false,
     artEnabled: true,
@@ -1043,6 +1067,7 @@
       state.mateShown = false;
       state.lastPly = -1;
       state.movesSignature = "";
+      state.traceSignature = "";
       state.pendingMove = false;
       state.postgameOpened = false;
       $('side-panel').classList.remove('open');
@@ -1496,6 +1521,10 @@
   function renderTrace(snap) {
     var targets = traceTargets(snap);
     var entries = (snap.trace || []).filter(function (e) { return e.kind !== 'llm_step'; });
+    var lastEntry = entries.length ? entries[entries.length - 1] : null;
+    var traceSig = entries.length + ':' + (lastEntry ? (lastEntry.id || '') + ':' + String(lastEntry.text || '').length : '') + ':' + snap.mode;
+    if (state.traceSignature === traceSig) { return; }
+    state.traceSignature = traceSig;
     var keys = Object.keys(targets);
     keys.forEach(function (key) { targets[key].innerHTML = ''; });
     if (!entries.length) {
@@ -1531,6 +1560,7 @@
     var live = host.querySelector('.trace-item.live');
     if (live) { live.remove(); }
     host.insertAdjacentHTML('beforeend', traceItemHtml(entry));
+    while (host.children.length > 220) { host.removeChild(host.firstChild); }
     restoreTraceOpen(host);
     host.scrollTop = host.scrollHeight;
   }
@@ -1662,6 +1692,7 @@
         (model.has_key ? '' : ' 缺少 Key') + '</span></div>' +
         '<div class="actions">' +
         '<button class="btn" data-test="' + model.id + '">测试</button>' +
+        '<button class="btn" data-edit="' + model.id + '">编辑</button>' +
         '<button class="btn" data-del="' + model.id + '">删除</button>' +
         '</div><span class="test-slot"></span></div>';
     });
@@ -1742,6 +1773,20 @@
   }
 
   // ------------------------------------------------------------------- events
+  var pendingSnapshot = null;
+  var snapshotFrame = 0;
+
+  function scheduleSnapshot(snapshot) {
+    pendingSnapshot = snapshot;
+    if (snapshotFrame) { return; }
+    snapshotFrame = requestAnimationFrame(function () {
+      snapshotFrame = 0;
+      var next = pendingSnapshot;
+      pendingSnapshot = null;
+      if (next) { applySnapshot(next); }
+    });
+  }
+
   function connectEvents() {
     if (state.es) { state.es.close(); }
     var es = new EventSource('/api/events');
@@ -1749,11 +1794,11 @@
     es.onmessage = function (event) {
       var data;
       try { data = JSON.parse(event.data); } catch (err) { return; }
-      if (data.type === 'state' && data.snapshot) { applySnapshot(data.snapshot); }
+      if (data.type === 'state' && data.snapshot) { scheduleSnapshot(data.snapshot); }
       else if (data.type === 'trace' && data.entry) { addTrace(data.entry); }
       else if (data.type === 'thinking_delta') { applyThinkingDelta(data); }
       else if (data.type === 'sim') { onSimEvent(data); }
-      else if (data.type === 'end' && data.snapshot) { applySnapshot(data.snapshot); }
+      else if (data.type === 'end' && data.snapshot) { scheduleSnapshot(data.snapshot); }
     };
   }
 
@@ -1761,7 +1806,7 @@
     try {
       var data = await api('/api/state');
       if (data.snapshot) {
-        applySnapshot(data.snapshot);
+        scheduleSnapshot(data.snapshot);
         if (!state.es && !state.staticMode) { connectEvents(); }
       }
     } catch (err) { /* server not ready yet */ }
@@ -1824,26 +1869,101 @@
     }
   }
 
+  function modelJsonField(id, label) {
+    var raw = $(id).value.trim();
+    if (!raw) { return {}; }
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('必须是 JSON 对象');
+      }
+      return parsed;
+    } catch (err) {
+      throw new Error(label + '解析失败：' + err.message);
+    }
+  }
+
+  function resetModelForm() {
+    state.editingModelId = null;
+    ['add-base-url', 'add-key', 'add-model', 'add-label', 'add-temperature',
+      'add-max-tokens', 'add-budget', 'add-extra-body', 'add-extra-headers'].forEach(function (id) {
+      $(id).value = '';
+    });
+    $('add-effort').value = '';
+    $('add-key').placeholder = 'API Key';
+    $('btn-add-model').textContent = '添加';
+    $('btn-cancel-model').classList.add('hidden');
+  }
+
+  function editModel(id) {
+    var model = null;
+    for (var i = 0; i < state.models.length; i += 1) {
+      if (state.models[i].id === id) { model = state.models[i]; break; }
+    }
+    if (!model) { return; }
+    state.editingModelId = id;
+    $('add-provider').value = model.provider;
+    $('add-base-url').value = model.base_url || '';
+    $('add-key').value = '';
+    $('add-key').placeholder = '留空则保留现有 Key';
+    $('add-model').value = model.model || '';
+    $('add-label').value = model.label || '';
+    $('add-temperature').value = model.temperature === undefined ? '' : model.temperature;
+    $('add-max-tokens').value = model.max_tokens || '';
+    $('add-effort').value = model.reasoning_effort || '';
+    $('add-budget').value = model.thinking_budget || '';
+    $('add-extra-body').value = model.extra_body && Object.keys(model.extra_body).length
+      ? JSON.stringify(model.extra_body, null, 2) : '';
+    $('add-extra-headers').value = model.extra_headers && Object.keys(model.extra_headers).length
+      ? JSON.stringify(model.extra_headers, null, 2) : '';
+    $('btn-add-model').textContent = '保存';
+    $('btn-cancel-model').classList.remove('hidden');
+    $('add-result').textContent = '正在编辑 ' + (model.label || model.model);
+    $('add-result').className = 'hint';
+    $('add-provider').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   async function addModel() {
     var provider = $('add-provider').value;
-    var payload = {
-      provider: provider,
-      model: $('add-model').value.trim(),
-      api_key: $('add-key').value.trim(),
-      base_url: $('add-base-url').value.trim(),
-      label: $('add-label').value.trim()
-    };
-    if (provider === 'custom') {
+    var payload;
+    try {
+      payload = {
+        provider: provider,
+        model: $('add-model').value.trim(),
+        api_key: $('add-key').value.trim(),
+        base_url: $('add-base-url').value.trim(),
+        label: $('add-label').value.trim(),
+        temperature: (function () {
+          var value = parseFloat($('add-temperature').value);
+          return isFinite(value) ? value : 0.6;
+        })(),
+        max_tokens: parseInt($('add-max-tokens').value, 10) || 1200,
+        reasoning_effort: $('add-effort').value,
+        thinking_budget: parseInt($('add-budget').value, 10) || 0,
+        extra_body: modelJsonField('add-extra-body', '请求体覆盖'),
+        extra_headers: modelJsonField('add-extra-headers', '额外请求头')
+      };
+    } catch (err) {
+      $('add-result').textContent = err.message;
+      $('add-result').className = 'hint error';
+      return;
+    }
+    if (provider === 'custom' && !state.editingModelId) {
       var base = window.prompt('请输入 OpenAI 兼容接口的 base_url（例如 https://api.example.com/v1）');
       if (!base) { return; }
       payload.base_url = base;
     }
     try {
-      var data = await api('/api/models', { method: 'POST', body: payload });
-      $('add-key').value = '';
-      $('add-label').value = '';
-      $('add-result').textContent = '已添加：' + data.model.label + '（记得点“测试”确认可用）';
+      var data;
+      if (state.editingModelId) {
+        data = await api('/api/models/' + state.editingModelId, { method: 'POST', body: payload });
+        $('add-result').textContent = '已保存：' + data.model.label;
+      } else {
+        data = await api('/api/models', { method: 'POST', body: payload });
+        $('add-result').textContent = '已添加：' + data.model.label + '（记得点“测试”确认可用）';
+      }
       $('add-result').className = 'hint';
+      resetModelForm();
       await loadModels();
     } catch (err) {
       $('add-result').textContent = err.message;
@@ -2439,6 +2559,25 @@
     $('check-text').textContent = '';
     $('material-text').textContent = '';
     $('turn-dot').className = 'dot';
+    var previousFx = rp.lastFxIndex === undefined ? -1 : rp.lastFxIndex;
+    rp.lastFxIndex = rp.index;
+    if (rp.index > previousFx && rp.index > 0) {
+      var fxStep = rp.timeline[rp.index];
+      if (fxStep && fxStep.type === 'step') {
+        var fxMove = fxStep.move;
+        var isFinal = rp.index === rp.timeline.length - 1;
+        var fxResult = rp.log.result || {};
+        if (isFinal && fxResult.code) {
+          setTimeout(function () {
+            playEndFx({ result: fxResult, human_side: null });
+          }, 100);
+        } else if (fxMove.gave_check) {
+          setTimeout(function () {
+            playCheckFx({ turn: fxMove.side === 'red' ? 'black' : 'red' });
+          }, 100);
+        }
+      }
+    }
   }
 
   function renderReplayTrace(entries) {
@@ -2909,6 +3048,9 @@
       var data = await api('/api/sim/move', { method: 'POST', body: { piece_id: pieceId, to: to } });
       state.simSelected = null;
       showSim(data.snapshot, state.snapshot.human_side, true, data.ended);
+      if (data.snapshot && data.snapshot.check) {
+        setTimeout(function () { playCheckFx(data.snapshot); }, 80);
+      }
     } catch (err) {
       toast(err.message);
     }
@@ -2919,6 +3061,10 @@
     K: "帥", A: "仕", B: "相", N: "馬", R: "車", C: "炮", P: "兵",
     k: "將", a: "士", b: "象", n: "馬", r: "車", c: "砲", p: "卒"
   };
+  var videoBoardCache = null;
+  var videoPieceCache = {};
+  var videoBannerCache = null;
+  var videoBannerKey = "";
 
   function videoFenPieces(fen) {
     var out = [];
@@ -2989,39 +3135,84 @@
   function videoY(geo, y) { return geo.by + geo.pad + (9 - y) * geo.cell; }
 
   function drawVideoBoard(ctx, geo) {
-    var grad = ctx.createLinearGradient(geo.bx, geo.by, geo.bx + geo.bw, geo.by + geo.bh);
-    grad.addColorStop(0, "#f0d6a4");
-    grad.addColorStop(0.55, "#e8c68f");
-    grad.addColorStop(1, "#dcb87a");
-    ctx.fillStyle = grad;
-    ctx.fillRect(geo.bx, geo.by, geo.bw, geo.bh);
-    ctx.strokeStyle = "rgba(120, 84, 40, .85)";
-    ctx.lineWidth = 1.4;
-    for (var i = 0; i <= 8; i += 1) {
-      ctx.beginPath();
-      ctx.moveTo(videoX(geo, i), videoY(geo, 0));
-      ctx.lineTo(videoX(geo, i), videoY(geo, 9));
-      ctx.stroke();
+    if (!videoBoardCache) {
+      var cache = document.createElement("canvas");
+      cache.width = 1920;
+      cache.height = 1140;
+      var g = cache.getContext("2d");
+      g.setTransform(1.5, 0, 0, 1.5, 0, 0);
+      var grad = g.createLinearGradient(geo.bx, geo.by, geo.bx + geo.bw, geo.by + geo.bh);
+      grad.addColorStop(0, "#f0d6a4");
+      grad.addColorStop(0.55, "#e8c68f");
+      grad.addColorStop(1, "#dcb87a");
+      g.fillStyle = grad;
+      g.fillRect(geo.bx, geo.by, geo.bw, geo.bh);
+      g.strokeStyle = "rgba(120, 84, 40, .85)";
+      g.lineWidth = 1.4;
+      for (var i = 0; i <= 8; i += 1) {
+        g.beginPath();
+        g.moveTo(videoX(geo, i), videoY(geo, 0));
+        g.lineTo(videoX(geo, i), videoY(geo, 9));
+        g.stroke();
+      }
+      for (var j = 0; j <= 9; j += 1) {
+        g.beginPath();
+        g.moveTo(videoX(geo, 0), videoY(geo, j));
+        g.lineTo(videoX(geo, 8), videoY(geo, j));
+        g.stroke();
+      }
+      g.lineWidth = 2.4;
+      g.strokeRect(videoX(geo, 0), videoY(geo, 9), 8 * geo.cell, 9 * geo.cell);
+      g.lineWidth = 1.4;
+      function diag(x1, y1, x2, y2) {
+        g.beginPath();
+        g.moveTo(videoX(geo, x1), videoY(geo, y1));
+        g.lineTo(videoX(geo, x2), videoY(geo, y2));
+        g.stroke();
+      }
+      diag(3, 9, 5, 7); diag(5, 9, 3, 7);
+      diag(3, 2, 5, 0); diag(5, 2, 3, 0);
+      videoText(g, "楚  河", videoX(geo, 2.2), videoY(geo, 4.55), "26px 'Kaiti SC', serif", "rgba(120,84,40,.75)", "center");
+      videoText(g, "汉  界", videoX(geo, 5.8), videoY(geo, 4.55), "26px 'Kaiti SC', serif", "rgba(120,84,40,.75)", "center");
+      videoBoardCache = cache;
     }
-    for (var j = 0; j <= 9; j += 1) {
-      ctx.beginPath();
-      ctx.moveTo(videoX(geo, 0), videoY(geo, j));
-      ctx.lineTo(videoX(geo, 8), videoY(geo, j));
-      ctx.stroke();
+    ctx.drawImage(videoBoardCache, 0, 0, 1280, 760);
+  }
+
+  function videoPieceSprite(piece) {
+    var key = piece.ch;
+    if (videoPieceCache[key]) { return videoPieceCache[key]; }
+    var cache = document.createElement("canvas");
+    cache.width = 128;
+    cache.height = 128;
+    var g = cache.getContext("2d");
+    var cx = 64;
+    var cy = 64;
+    var radius = 58;
+    g.beginPath();
+    g.arc(cx + 1.5, cy + 3, radius, 0, Math.PI * 2);
+    g.fillStyle = "rgba(0,0,0,.25)";
+    g.fill();
+    g.beginPath();
+    g.arc(cx, cy, radius, 0, Math.PI * 2);
+    var grad = g.createRadialGradient(cx - radius * .3, cy - radius * .35, radius * .2, cx, cy, radius);
+    if (piece.red) {
+      grad.addColorStop(0, "#fff7ea"); grad.addColorStop(.7, "#f0d6ae"); grad.addColorStop(1, "#e2c084");
+    } else {
+      grad.addColorStop(0, "#f4f4f4"); grad.addColorStop(.7, "#d9d9d9"); grad.addColorStop(1, "#c3c3c3");
     }
-    ctx.lineWidth = 2.4;
-    ctx.strokeRect(videoX(geo, 0), videoY(geo, 9), 8 * geo.cell, 9 * geo.cell);
-    ctx.lineWidth = 1.4;
-    function diag(x1, y1, x2, y2) {
-      ctx.beginPath();
-      ctx.moveTo(videoX(geo, x1), videoY(geo, y1));
-      ctx.lineTo(videoX(geo, x2), videoY(geo, y2));
-      ctx.stroke();
-    }
-    diag(3, 9, 5, 7); diag(5, 9, 3, 7);
-    diag(3, 2, 5, 0); diag(5, 2, 3, 0);
-    videoText(ctx, "楚  河", videoX(geo, 2.2), videoY(geo, 4.55), "26px 'Kaiti SC', serif", "rgba(120,84,40,.75)", "center");
-    videoText(ctx, "汉  界", videoX(geo, 5.8), videoY(geo, 4.55), "26px 'Kaiti SC', serif", "rgba(120,84,40,.75)", "center");
+    g.fillStyle = grad;
+    g.fill();
+    g.lineWidth = 4;
+    g.strokeStyle = piece.red ? "#b3261e" : "#1d1d1f";
+    g.stroke();
+    g.font = "800 76px 'Kaiti SC', 'STKaiti', serif";
+    g.fillStyle = piece.red ? "#b3261e" : "#1d1d1f";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(VIDEO_GLYPH[piece.ch] || "", cx, cy + 1);
+    videoPieceCache[key] = cache;
+    return cache;
   }
 
   function drawVideoPiece(ctx, geo, piece, px, py, alpha) {
@@ -3030,28 +3221,7 @@
     var radius = geo.cell * 0.45;
     ctx.save();
     ctx.globalAlpha = alpha === undefined ? 1 : alpha;
-    ctx.beginPath();
-    ctx.arc(cx + 1.5, cy + 3, radius, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(0,0,0,.25)";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    var grad = ctx.createRadialGradient(cx - radius * .3, cy - radius * .35, radius * .2, cx, cy, radius);
-    if (piece.red) {
-      grad.addColorStop(0, "#fff7ea"); grad.addColorStop(.7, "#f0d6ae"); grad.addColorStop(1, "#e2c084");
-    } else {
-      grad.addColorStop(0, "#f4f4f4"); grad.addColorStop(.7, "#d9d9d9"); grad.addColorStop(1, "#c3c3c3");
-    }
-    ctx.fillStyle = grad;
-    ctx.fill();
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = piece.red ? "#b3261e" : "#1d1d1f";
-    ctx.stroke();
-    ctx.font = "800 " + Math.round(geo.cell * 0.62) + "px 'Kaiti SC', 'STKaiti', serif";
-    ctx.fillStyle = piece.red ? "#b3261e" : "#1d1d1f";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(VIDEO_GLYPH[piece.ch] || "", cx, cy + 1);
+    ctx.drawImage(videoPieceSprite(piece), cx - radius, cy - radius, radius * 2, radius * 2);
     ctx.restore();
   }
 
@@ -3168,6 +3338,9 @@
     var result = log.result || {};
     var code = result.code || "";
     var winner = result.winner;
+    if (!code && !winner && !result.reason) {
+      return { title: "对局进行中", sub: "尚未结束", winner: null, code: "" };
+    }
     var reasonZh = VIDEO_REASON_ZH[code] || result.reason || "";
     var title = "对 局 结 束";
     var sub = reasonZh;
@@ -3185,6 +3358,32 @@
       sub = (winner === "red" ? "红方胜" : "黑方胜") + (reasonZh ? " · " + reasonZh : "");
     }
     return { title: title, sub: sub, winner: winner, code: code };
+  }
+
+  function videoBannerSprite(result) {
+    var key = result.title + "|" + result.sub + "|" + (result.winner || "");
+    if (videoBannerCache && videoBannerKey === key) { return videoBannerCache; }
+    var cache = document.createElement("canvas");
+    cache.width = 900;
+    cache.height = 300;
+    var g = cache.getContext("2d");
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.letterSpacing = "12px";
+    g.font = "800 132px 'STKaiti', 'KaiTi', 'Noto Serif SC', serif";
+    g.fillStyle = result.winner ? "#ffe6a8" : "#efe0c0";
+    g.shadowColor = result.winner ? "rgba(255, 140, 50, .95)" : "rgba(210, 180, 120, .9)";
+    g.shadowBlur = 46;
+    g.fillText(result.title, 450, 110);
+    g.letterSpacing = "0.3em";
+    g.font = "22px 'Microsoft YaHei', sans-serif";
+    g.fillStyle = "#e7c98a";
+    g.shadowColor = "rgba(0,0,0,.8)";
+    g.shadowBlur = 12;
+    g.fillText(result.sub, 450, 210);
+    videoBannerCache = cache;
+    videoBannerKey = key;
+    return cache;
   }
 
   function drawVideoEnd(ctx, timeline, t) {
@@ -3248,26 +3447,7 @@
     ctx.rotate(rotate);
     ctx.scale(scale, scale);
     ctx.globalAlpha = opacity;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.letterSpacing = "12px";
-    ctx.font = "800 132px 'STKaiti', 'KaiTi', 'Noto Serif SC', serif";
-    ctx.fillStyle = result.winner ? "#ffe6a8" : "#efe0c0";
-    ctx.shadowColor = result.winner ? "rgba(255, 140, 50, .95)" : "rgba(210, 180, 120, .9)";
-    ctx.shadowBlur = 46;
-    ctx.fillText(result.title, 0, 0);
-    ctx.restore();
-
-    ctx.save();
-    ctx.globalAlpha = opacity;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.letterSpacing = "0.3em";
-    ctx.font = "22px 'Microsoft YaHei', sans-serif";
-    ctx.fillStyle = "#e7c98a";
-    ctx.shadowColor = "rgba(0,0,0,.8)";
-    ctx.shadowBlur = 12;
-    ctx.fillText(result.sub, cx, cy + 96);
+    ctx.drawImage(videoBannerSprite(result), -450, -130, 900, 300);
     ctx.restore();
     ctx.restore();
   }
@@ -3338,7 +3518,11 @@
       videoText(ctx, "对局信息", 700, 104, "700 20px 'Microsoft YaHei', sans-serif", "rgba(240, 226, 200, .95)");
       videoText(ctx, "共 " + moves.length + " 手", 700, 138, "15px 'Microsoft YaHei', sans-serif", "rgba(210, 196, 172, .8)");
       videoText(ctx, info.sub, 700, 174, "700 22px 'Microsoft YaHei', sans-serif", "rgba(240, 226, 200, .95)");
-      var lastMoves = moves.slice(-8);
+      var visibleMoves = moves.slice(0, Math.max(0, Math.min(moves.length, movesDone)));
+      var lastMoves = visibleMoves.slice(-8);
+      if (!lastMoves.length) {
+        videoText(ctx, "开局", 700, 230, "16px 'Microsoft YaHei', sans-serif", "rgba(200, 186, 164, .75)");
+      }
       lastMoves.forEach(function (item, idx) {
         videoText(ctx, "第 " + item.ply + " 手  " + (item.notation || ""), 700, 230 + idx * 30,
           "16px 'Microsoft YaHei', sans-serif", idx === lastMoves.length - 1 ? "rgba(240, 220, 180, .95)" : "rgba(200, 186, 164, .75)");
@@ -3603,9 +3787,13 @@
         testModel(testId, event.target.parentElement.parentElement.querySelector('.test-slot'));
         return;
       }
+      var editId = event.target.getAttribute('data-edit');
+      if (editId) { editModel(editId); return; }
       var delId = event.target.getAttribute('data-del');
       if (delId) { removeModel(delId); }
     });
+
+    $('btn-cancel-model').addEventListener('click', resetModelForm);
 
     $('btn-resign').addEventListener('click', function () {
       if (!window.confirm('确定认输吗？')) { return; }

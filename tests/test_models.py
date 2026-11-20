@@ -48,6 +48,33 @@ class ModelRegistryTest(unittest.TestCase):
         entry = self.registry.add("deepseek", "", "key")
         self.assertEqual(entry["model"], "deepseek-chat")
 
+    def test_reasoning_and_overrides_roundtrip(self):
+        entry = self.registry.add(
+            "openai",
+            "gpt-5",
+            "sk-test",
+            reasoning_effort="high",
+            thinking_budget=4096,
+            max_tokens=8000,
+            extra_body={"top_p": 0.9},
+            extra_headers={"X-Test": "1"},
+        )
+        public = self.registry.to_public(entry)
+        self.assertEqual(public["reasoning_effort"], "high")
+        self.assertEqual(public["thinking_budget"], 4096)
+        self.assertEqual(public["max_tokens"], 8000)
+        self.assertEqual(public["extra_body"], {"top_p": 0.9})
+        config = self.registry.config_for(entry["id"])
+        self.assertEqual(config.max_tokens, 8000)
+        self.assertEqual(config.extra_body, {"top_p": 0.9})
+        self.assertEqual(config.extra_headers, {"X-Test": "1"})
+        self.registry.update(entry["id"], reasoning_effort="low", max_tokens=9000)
+        reloaded = self.registry.get(entry["id"])
+        self.assertEqual(reloaded["reasoning_effort"], "low")
+        self.assertEqual(reloaded["max_tokens"], 9000)
+        self.assertTrue(reloaded["api_key"])
+        self.assertEqual(reloaded["extra_body"], {"top_p": 0.9})
+
     def test_remove_missing(self):
         with self.assertRaises(RegistryError):
             self.registry.remove("m-missing")

@@ -84,6 +84,11 @@ class AppState:
             api_key=entry.get("api_key", ""),
             base_url=entry.get("base_url", ""),
             temperature=entry.get("temperature", 0.6),
+            max_tokens=entry.get("max_tokens", 1200),
+            reasoning_effort=entry.get("reasoning_effort", ""),
+            thinking_budget=entry.get("thinking_budget", 0),
+            extra_body=entry.get("extra_body") or {},
+            extra_headers=entry.get("extra_headers") or {},
             label=entry.get("label", ""),
         )
 
@@ -288,7 +293,19 @@ class Handler(BaseHTTPRequestHandler):
                     body.get("base_url", ""),
                     body.get("label", ""),
                     body.get("temperature", 0.6),
+                    body.get("max_tokens", 1200),
+                    body.get("reasoning_effort", ""),
+                    body.get("thinking_budget", 0),
+                    body.get("extra_body"),
+                    body.get("extra_headers"),
                 )
+                self._json({"ok": True, "model": self.state.registry.to_public(entry)})
+            except RegistryError as exc:
+                self._json({"ok": False, "error": str(exc)}, status=400)
+        elif path.startswith("/api/models/") and not path.endswith("/test") and not path.endswith("/discover"):
+            model_id = path[len("/api/models/"):].strip("/")
+            try:
+                entry = self.state.registry.update(model_id, **body)
                 self._json({"ok": True, "model": self.state.registry.to_public(entry)})
             except RegistryError as exc:
                 self._json({"ok": False, "error": str(exc)}, status=400)
