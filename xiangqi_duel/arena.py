@@ -185,7 +185,11 @@ class Match:
             if color == human_side:
                 continue
             if players and color in players:
-                self.players[color] = players[color]
+                player = players[color]
+                # Rematch reuses the same player objects; rebind their event
+                # callback so thinking/tool traces go to the new match.
+                player.emit = self._agent_event
+                self.players[color] = player
             else:
                 self.players[color] = specs[color].make_player(
                     color,

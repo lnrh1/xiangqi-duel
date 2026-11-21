@@ -192,6 +192,22 @@ class MatchTest(unittest.TestCase):
         self.assertIn("最后一条", calls[-2][1])
         match.stop()
 
+    def test_reused_players_rebind_event_callback(self):
+        class FakePlayer:
+            def __init__(self):
+                self.emit = None
+
+        red = FakePlayer()
+        black = FakePlayer()
+        match = Match(
+            PlayerSpec(kind="human"),
+            PlayerSpec(kind="human"),
+            players={"red": red, "black": black},
+        )
+        self.assertIs(red.emit.__self__, match)
+        self.assertIs(black.emit.__self__, match)
+        match.stop()
+
     def test_aivai_allows_spectator_chat(self):
         match = Match(
             PlayerSpec(kind="engine", depth=1),
