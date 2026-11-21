@@ -3228,6 +3228,40 @@
     ctx.restore();
   }
 
+  function drawVideoCheckBurst(ctx, geo, gx, gy, progress) {
+    var p = Math.max(0, Math.min(1, progress));
+    var fade = 1 - p;
+    if (fade <= 0) { return; }
+    ctx.save();
+    var flash = ctx.createRadialGradient(gx, gy, 8, gx, gy, geo.cell * 2.2);
+    flash.addColorStop(0, "rgba(255, 226, 160, " + (0.42 * fade) + ")");
+    flash.addColorStop(0.5, "rgba(224, 83, 63, " + (0.18 * fade) + ")");
+    flash.addColorStop(1, "rgba(224, 83, 63, 0)");
+    ctx.fillStyle = flash;
+    ctx.beginPath();
+    ctx.arc(gx, gy, geo.cell * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(240, 192, 96, " + (0.5 * fade) + ")";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(gx, gy, geo.cell * (0.55 + p * 1.4), 0, Math.PI * 2);
+    ctx.stroke();
+    var colors = ["#f0c060", "#e0533f", "#8c2f1e"];
+    for (var k = 0; k < 28; k += 1) {
+      var angle = (k * 2.399) % (Math.PI * 2);
+      var speed = geo.cell * (0.8 + (k % 7) * 0.2);
+      var px = gx + Math.cos(angle) * speed * p;
+      var py = gy + Math.sin(angle) * speed * p + p * p * 18;
+      ctx.globalAlpha = 0.25 + 0.7 * fade;
+      ctx.fillStyle = colors[k % colors.length];
+      ctx.beginPath();
+      ctx.arc(px, py, 2.2 + (k % 3) * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   function drawVideoPieces(ctx, geo, fen, hide, moving, lastMove, checkSide) {
     var pieces = videoFenPieces(fen);
     pieces.forEach(function (piece) {
@@ -3506,6 +3540,16 @@
     var checkSide = inMove && local >= moveStart && current && current.gave_check
       ? (current.side === "red" ? "black" : "red") : null;
     drawVideoPieces(ctx, geo, fen, moving ? { x: moving.x1, y: moving.y1 } : null, moving, last, checkSide);
+    if (checkSide) {
+      var burstProgress = Math.max(0, Math.min(1, (local - moveStart) / Math.max(0.35, moveDur)));
+      var checkPieces = videoFenPieces(fen);
+      var checkedGeneral = checkPieces.filter(function (item) {
+        return item.ch === (checkSide === "red" ? "K" : "k");
+      })[0];
+      if (checkedGeneral) {
+        drawVideoCheckBurst(ctx, geo, videoX(geo, checkedGeneral.x), videoY(geo, checkedGeneral.y), burstProgress);
+      }
+    }
     videoText(ctx, "第 " + (movesDone || 0) + " / " + moves.length + " 手", 1240, 36, "14px 'Microsoft YaHei', sans-serif", "rgba(220, 205, 180, .8)", "right");
     if (timeline.includeTrace) {
       drawVideoSide(ctx, timeline, current ? current.ply : 1, "red", 640, true, current);
@@ -3527,8 +3571,13 @@
         videoText(ctx, "开局", 700, 230, "16px 'Microsoft YaHei', sans-serif", "rgba(200, 186, 164, .75)");
       }
       lastMoves.forEach(function (item, idx) {
-        videoText(ctx, "第 " + item.ply + " 手  " + (item.notation || ""), 700, 230 + idx * 30,
-          "16px 'Microsoft YaHei', sans-serif", idx === lastMoves.length - 1 ? "rgba(240, 220, 180, .95)" : "rgba(200, 186, 164, .75)");
+        var rowY = 230 + idx * 30;
+        var isRed = item.side === "red";
+        var sideColor = isRed ? "rgba(238, 112, 82, .96)" : "rgba(205, 216, 232, .96)";
+        var moveColor = idx === lastMoves.length - 1 ? "rgba(240, 228, 200, .95)" : "rgba(205, 192, 170, .78)";
+        videoText(ctx, "第 " + item.ply + " 手", 700, rowY, "15px 'Microsoft YaHei', sans-serif", "rgba(190, 178, 158, .8)");
+        videoText(ctx, isRed ? "红方" : "黑方", 770, rowY, "700 15px 'Microsoft YaHei', sans-serif", sideColor);
+        videoText(ctx, item.notation || "", 825, rowY, "16px 'Microsoft YaHei', sans-serif", moveColor);
       });
     }
     if (ended) { drawVideoEnd(ctx, timeline, t); }
