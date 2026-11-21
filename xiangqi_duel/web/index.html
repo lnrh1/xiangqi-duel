@@ -850,7 +850,7 @@
       <button class="btn ghost" id="video-close">关闭</button>
     </div>
     <div class="video-stage">
-      <canvas id="video-canvas" width="1920" height="1140"></canvas>
+      <canvas id="video-canvas" width="1600" height="950"></canvas>
       <video id="video-preview" class="hidden" controls playsinline></video>
     </div>
     <div class="video-actions">
@@ -3473,8 +3473,8 @@
     var index = Math.max(0, Math.min(moves.length - 1, Math.floor((t - intro) / per)));
     var inMove = t >= intro && index < moves.length && t < intro + moves.length * per;
     var local = inMove ? (t - intro - index * per) : 1;
-    var moveStart = per * 0.5;
-    var moveDur = per * 0.39;
+    var moveStart = per * 0.4;
+    var moveDur = per * 0.5;
     var moveEnd = moveStart + moveDur;
     var current = inMove ? moves[index] : (moves.length ? moves[moves.length - 1] : null);
     var before = index > 0 ? moves[index - 1].fen : log.start_fen;
@@ -3483,7 +3483,7 @@
     var last = current;
     var showBefore = inMove && local < 0.9;
     var moving = null;
-    if (inMove && local >= moveStart && local < moveEnd + 0.04) {
+    if (inMove && local >= moveStart && local < moveEnd) {
       var from = current.from;
       var to = current.to;
       var x1 = "abcdefghi".indexOf(from.charAt(0));
@@ -3590,7 +3590,7 @@
     $('video-status').textContent = '渲染中 0%（最长 5 分钟）';
     var canvas = $('video-canvas');
     var ctx = canvas.getContext('2d');
-    var stream = canvas.captureStream(30);
+    var stream = canvas.captureStream(60);
     var mime = 'video/webm';
     if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
       mime = 'video/webm;codecs=vp9';
@@ -3613,14 +3613,14 @@
     recorder.start(250);
     var startTime = performance.now();
     await new Promise(function (resolve) {
-      function frame() {
-        var t = (performance.now() - startTime) / 1000;
+      function frame(now) {
+        var t = ((now || performance.now()) - startTime) / 1000;
         drawVideoFrame(ctx, timeline, Math.min(t, timeline.duration));
         $('video-status').textContent = '渲染中 ' + Math.min(99, Math.round(t / timeline.duration * 100)) + '%';
-        if (t < timeline.duration) { setTimeout(frame, 33); }
+        if (t < timeline.duration) { requestAnimationFrame(frame); }
         else { resolve(); }
       }
-      setTimeout(frame, 0);
+      requestAnimationFrame(frame);
     });
     recorder.stop();
     await stopped;
