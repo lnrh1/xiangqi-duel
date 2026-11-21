@@ -170,7 +170,7 @@
   .layout.human .side-col { display: none; }
   .layout.replay .side-col { display: none; }
   .panel-head .player { width: 100%; }
-  .trace-panel .trace { flex: 1; overflow-y: auto; max-height: none; }
+  .trace-panel .trace { flex: 1; min-height: 0; overflow-y: auto; max-height: 52vh; }
   .players-inline { display: flex; gap: 10px; width: min(66vh, 100%); }
   .players-inline.hidden { display: none; }
   .sim-actions { display: flex; gap: 8px; }
@@ -1112,7 +1112,6 @@
     if (chatTab) { chatTab.classList.toggle('hidden', free); }
     if (free && state.tab === 'chat') { switchTab('moves'); }
     $('chat-hint').textContent = '';
-    $('tab-trace').classList.add('hidden');
     fitBoard();
     if (!spectate) { $('side-panel').classList.remove('open'); }
     var subtitle = $('subtitle');
@@ -3114,7 +3113,7 @@
     $('drawer-close').addEventListener('click', function () {
       $('side-panel').classList.remove('open');
     });
-    ['trace-list-red', 'trace-list-black', 'trace-list'].forEach(bindTraceScroll);
+    ['trace-list-red', 'trace-list-black', 'trace-list'].forEach(function (id) { bindTraceScroll($(id)); });
     document.querySelectorAll('.trace-jump').forEach(function (button) {
       button.addEventListener('click', function () {
         var host = $(button.getAttribute('data-target'));
