@@ -850,7 +850,7 @@
       <button class="btn ghost" id="video-close">关闭</button>
     </div>
     <div class="video-stage">
-      <canvas id="video-canvas" width="1600" height="950"></canvas>
+      <canvas id="video-canvas" width="1280" height="760"></canvas>
       <video id="video-preview" class="hidden" controls playsinline></video>
     </div>
     <div class="video-actions">
@@ -946,6 +946,10 @@
   </div>
 </div>
 
+<script src="/vendor/ArrayBufferDataStream.js"></script>
+<script src="/vendor/BlobBuffer.js"></script>
+<script src="/vendor/WebMWriter.js"></script>
+<script src="/webm-muxer.js"></script>
 <script>
 (function () {
   'use strict';
@@ -3137,10 +3141,9 @@
   function drawVideoBoard(ctx, geo) {
     if (!videoBoardCache) {
       var cache = document.createElement("canvas");
-      cache.width = 1920;
-      cache.height = 1140;
+      cache.width = 1280;
+      cache.height = 760;
       var g = cache.getContext("2d");
-      g.setTransform(1.5, 0, 0, 1.5, 0, 0);
       var grad = g.createLinearGradient(geo.bx, geo.by, geo.bx + geo.bw, geo.by + geo.bh);
       grad.addColorStop(0, "#f0d6a4");
       grad.addColorStop(0.55, "#e8c68f");
@@ -3564,9 +3567,144 @@
     }
   }
 
+  function finishVideoBlob(blob) {
+    if (state.video.url) { URL.revokeObjectURL(state.video.url); }
+    state.video.url = URL.createObjectURL(blob);
+    var video = $('video-preview');
+    video.src = state.video.url;
+    video.classList.remove('hidden');
+    var download = $('video-download');
+    download.href = state.video.url;
+    download.download = 'xiangqi-duel-' + new Date().toISOString().slice(0, 10) + '.webm';
+    download.classList.remove('hidden');
+    $('video-status').textContent = '渲染完成，可预览或下载';
+    $('video-render').disabled = false;
+    $('video-close').disabled = false;
+    state.video.rendering = false;
+  }
+
+  async function renderVideoWithCodecs(canvas, timeline) {
+    var width = canvas.width;
+    var height = canvas.height;
+    var fps = 30;
+    var candidates = [
+      { codec: 'vp09.00.31.08', muxer: 'V_VP9' },
+      { codec: 'vp8', muxer: 'V_VP8' }
+    ];
+    var chosen = null;
+    for (var i = 0; i < candidates.length; i += 1) {
+      try {
+        var support = await VideoEncoder.isConfigSupported({
+          codec: candidates[i].codec,
+          width: width,
+          height: height,
+          bitrate: 8000000,
+          framerate: fps
+        });
+        if (support && support.supported) { chosen = candidates[i]; break; }
+      } catch (err) { /* try next codec */ }
+    }
+    if (!chosen) { throw new Error('浏览器没有可用的 VP8/VP9 编码器'); }
+
+    var muxer = new WebMMuxer.Muxer({
+      target: new WebMMuxer.ArrayBufferTarget(),
+      video: { codec: chosen.muxer, width: width, height: height, frameRate: fps }
+    });
+    var encodeError = null;
+    var encoder = new VideoEncoder({
+      output: function (chunk, meta) {
+        try { muxer.addVideoChunk(chunk, meta); } catch (err) { encodeError = err; }
+      },
+      error: function (err) { encodeError = err; }
+    });
+    encoder.configure({
+      codec: chosen.codec,
+      width: width,
+      height: height,
+      bitrate: 8000000,
+      framerate: fps,
+      latencyMode: 'quality'
+    });
+    var ctx = canvas.getContext('2d');
+    var totalFrames = Math.max(1, Math.ceil(timeline.duration * fps));
+    for (var frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
+      if (encodeError) { throw encodeError; }
+      var t = Math.min(timeline.duration, frameIndex / fps);
+      drawVideoFrame(ctx, timeline, t);
+      var frame = new VideoFrame(canvas, {
+        timestamp: Math.round(frameIndex * 1000000 / fps),
+        duration: Math.round(1000000 / fps)
+      });
+      encoder.encode(frame, { keyFrame: frameIndex % (fps * 2) === 0 });
+      frame.close();
+      while (encoder.encodeQueueSize > 8) {
+        await new Promise(function (resolve) { setTimeout(resolve, 4); });
+      }
+      if (frameIndex % 10 === 0) {
+        $('video-status').textContent = '编码中 ' + Math.min(99, Math.round(frameIndex / totalFrames * 100)) + '%';
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      }
+    }
+    await encoder.flush();
+    encoder.close();
+    if (encodeError) { throw encodeError; }
+    muxer.finalize();
+    return new Blob([muxer.target.buffer], { type: 'video/webm' });
+  }
+
+  async function renderVideoWithWebMWriter(canvas, timeline) {
+    var fps = 24;
+    var writer = new WebMWriter({ quality: 0.82, frameRate: fps });
+    var totalFrames = Math.max(1, Math.ceil(timeline.duration * fps));
+    for (var frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
+      drawVideoFrame(canvas.getContext('2d'), timeline, Math.min(timeline.duration, frameIndex / fps));
+      writer.addFrame(canvas);
+      if (frameIndex % 3 === 0) {
+        $('video-status').textContent = '编码中 ' + Math.min(99, Math.round(frameIndex / totalFrames * 100)) + '%';
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+      }
+    }
+    return await writer.complete();
+  }
+
+  async function renderVideoWithRecorder(canvas, timeline) {
+    var fps = 20;
+    var stream = canvas.captureStream(fps);
+    var mime = 'video/webm';
+    if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+      mime = 'video/webm;codecs=vp8';
+    } else if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+      mime = 'video/webm;codecs=vp9';
+    }
+    var chunks = [];
+    var recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3500000 });
+    recorder.ondataavailable = function (event) { if (event.data && event.data.size) { chunks.push(event.data); } };
+    var stopped = new Promise(function (resolve) { recorder.onstop = resolve; });
+    recorder.start(250);
+    var ctx = canvas.getContext('2d');
+    var totalFrames = Math.max(1, Math.ceil(timeline.duration * fps));
+    var nextFrameAt = performance.now();
+    for (var frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
+      drawVideoFrame(ctx, timeline, Math.min(timeline.duration, frameIndex / fps));
+      if (frameIndex % 3 === 0) {
+        $('video-status').textContent = '实时录制 ' + Math.min(99, Math.round(frameIndex / totalFrames * 100)) + '%';
+      }
+      nextFrameAt += 1000 / fps;
+      var wait = nextFrameAt - performance.now();
+      await new Promise(function (resolve) { setTimeout(resolve, wait > 0 ? wait : 0); });
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 120); });
+    recorder.stop();
+    await stopped;
+    return new Blob(chunks, { type: 'video/webm' });
+  }
+
   async function renderVideo() {
     if (state.video.rendering || !state.video.log) { return; }
-    if (!window.MediaRecorder || !$('video-canvas').captureStream) {
+    var hasCodecs = !!(window.VideoEncoder && window.VideoFrame && window.WebMMuxer);
+    var hasWriter = !!(window.WebMWriter && window.ArrayBufferDataStream && window.BlobBuffer);
+    var hasRecorder = !!(window.MediaRecorder && $('video-canvas').captureStream);
+    if (!hasCodecs && !hasWriter && !hasRecorder) {
       $('video-status').textContent = '当前浏览器不支持视频导出，请换 Chrome / Edge';
       return;
     }
@@ -3587,57 +3725,37 @@
     $('video-close').disabled = true;
     $('video-preview').classList.add('hidden');
     $('video-download').classList.add('hidden');
-    $('video-status').textContent = '渲染中 0%（最长 5 分钟）';
+    $('video-status').textContent = '准备编码…（最长 5 分钟）';
     var canvas = $('video-canvas');
-    var ctx = canvas.getContext('2d');
-    var stream = canvas.captureStream(60);
-    var mime = 'video/webm';
-    if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-      mime = 'video/webm;codecs=vp9';
-    } else if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
-      mime = 'video/webm;codecs=vp8';
-    }
-    var chunks = [];
-    var recorder;
     try {
-      recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10000000 });
+      var blob = null;
+      if (hasCodecs) {
+        try {
+          blob = await renderVideoWithCodecs(canvas, timeline);
+        } catch (codecErr) {
+          console.warn('WebCodecs 编码失败，回退离线 WebM 编码', codecErr);
+        }
+      }
+      if (!blob && hasWriter) {
+        try {
+          $('video-status').textContent = '离线编码中…';
+          blob = await renderVideoWithWebMWriter(canvas, timeline);
+        } catch (writerErr) {
+          console.warn('WebM 离线编码失败', writerErr);
+        }
+      }
+      if (!blob && hasRecorder) {
+        $('video-status').textContent = '回退实时录制…';
+        blob = await renderVideoWithRecorder(canvas, timeline);
+      }
+      if (!blob) { throw new Error('没有可用的视频编码器'); }
+      finishVideoBlob(blob);
     } catch (err) {
       state.video.rendering = false;
       $('video-render').disabled = false;
       $('video-close').disabled = false;
-      $('video-status').textContent = '无法启动录制：' + err.message;
-      return;
+      $('video-status').textContent = '导出失败：' + (err && err.message ? err.message : err);
     }
-    recorder.ondataavailable = function (event) { if (event.data && event.data.size) { chunks.push(event.data); } };
-    var stopped = new Promise(function (resolve) { recorder.onstop = resolve; });
-    recorder.start(250);
-    var startTime = performance.now();
-    await new Promise(function (resolve) {
-      function frame(now) {
-        var t = ((now || performance.now()) - startTime) / 1000;
-        drawVideoFrame(ctx, timeline, Math.min(t, timeline.duration));
-        $('video-status').textContent = '渲染中 ' + Math.min(99, Math.round(t / timeline.duration * 100)) + '%';
-        if (t < timeline.duration) { requestAnimationFrame(frame); }
-        else { resolve(); }
-      }
-      requestAnimationFrame(frame);
-    });
-    recorder.stop();
-    await stopped;
-    var blob = new Blob(chunks, { type: 'video/webm' });
-    if (state.video.url) { URL.revokeObjectURL(state.video.url); }
-    state.video.url = URL.createObjectURL(blob);
-    var video = $('video-preview');
-    video.src = state.video.url;
-    video.classList.remove('hidden');
-    var download = $('video-download');
-    download.href = state.video.url;
-    download.download = 'xiangqi-duel-' + new Date().toISOString().slice(0, 10) + '.webm';
-    download.classList.remove('hidden');
-    $('video-status').textContent = '渲染完成，可预览或下载';
-    $('video-render').disabled = false;
-    $('video-close').disabled = false;
-    state.video.rendering = false;
   }
 
   // --------------------------------------------------------------------- init
