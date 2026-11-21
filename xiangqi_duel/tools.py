@@ -11,7 +11,7 @@ import re
 
 from .coords import in_palace, numeric_square, parse_coord, square as square_name
 from .game import IllegalMove
-from .moves import in_check, is_attacked, other
+from .moves import in_check, is_attacked, legal_moves, other
 from .notation import move_text
 from .pieces import COLOR_ZH, normalize_piece_id
 from .simulation import Simulation
@@ -150,8 +150,10 @@ def tool_specs(allowed=None):
                 "name": "list_legal_moves",
                 "description": (
                     "列出合法着法：给出 piece_id 时只看这一枚棋子，"
-                    "不给出时列出你所有棋子的可走着法。每个着法包含目标格、"
-                    "UCCI 坐标、中文记谱和被吃的棋子编号。"
+                    "不给出时列出你所有棋子的可走着法。每个着法包含目标格、中文记谱、"
+                    "可吃的棋子（capture/capture_name）、是否将军（gives_check）、"
+                    "是否绝杀（gives_checkmate）、是否困毙（gives_stalemate）；"
+                    "另汇总 capture_moves / check_moves / checkmate_moves。"
                 ),
                 "parameters": {
                     "type": "object",
@@ -230,8 +232,9 @@ def tool_specs(allowed=None):
                 "name": "start_simulation",
                 "description": (
                     "进入推演棋盘：在虚拟棋盘上可以控制双方棋子试走（红黑按正常轮次交替），最多 8 步；"
-                    "推演中的 move / list_legal_moves 等自动作用于虚拟棋盘，不影响真实对局。"
-                    "注意：频繁推演会明显拖长一局的时间，只在关键局面使用。"
+                    "推演中的 move / list_legal_moves / get_status 等自动作用于虚拟棋盘，不影响真实对局。"
+                    "关键局面（兑子、将军、连续战术、看不清后续）先推演 2-6 步，可以提前发现被反将、"
+                    "丢子、被绝杀或直接绝杀，是减少漏算的主要手段；不要每手都推演。"
                 ),
                 "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
             },
@@ -660,12 +663,18 @@ class ToolBox:
         captured = board.pieces.get(move.capture_id) if move.capture_id else None
         preview = board.clone()
         preview.make(move)
+        opponent = other(color)
+        gives_check = bool(in_check(preview, opponent))
+        opponent_moves = legal_moves(preview, opponent)
         return {
             "to": numeric_square(*move.to),
             "notation": move_text(board, move, color),
             "capture": captured.id if captured else None,
             "capture_name": captured.name_zh if captured else None,
-            "gives_check": bool(in_check(preview, other(color))),
+            "is_capture": captured is not None,
+            "gives_check": gives_check,
+            "gives_checkmate": bool(gives_check and not opponent_moves),
+            "gives_stalemate": bool(not gives_check and not opponent_moves),
         }
 
     def _t_list_legal_moves(self, piece_id=None):
@@ -675,6 +684,7 @@ class ToolBox:
             color = piece.color if self.sim else self.side
             moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
             details = [self._move_detail(move, color) for move in moves]
+            summary = self._move_summary({piece.id: details} if details else {})
             return {
                 "ok": True,
                 "piece_id": piece.id,
@@ -683,6 +693,7 @@ class ToolBox:
                 "move_count": len(details),
                 "piece_count": 1 if details else 0,
                 "simulation": bool(self.sim),
+                **summary,
             }
         if self.sim:
             pieces = sorted(board.side_pieces(self.game.turn), key=lambda p: p.id)
@@ -694,8 +705,10 @@ class ToolBox:
             moves = self.sim.legal_moves_for(piece.id) if self.sim else self.game.legal_moves(piece.id)
             if not moves:
                 continue
-            result[piece.id] = [numeric_square(*move.to) for move in moves]
+            color = piece.color if self.sim else self.side
+            result[piece.id] = [self._move_detail(move, color) for move in moves]
             total += len(moves)
+        summary = self._move_summary(result)
         return {
             "ok": True,
             "piece_id": None,
@@ -704,6 +717,31 @@ class ToolBox:
             "move_count": total,
             "piece_count": len(result),
             "simulation": bool(self.sim),
+            **summary,
+        }
+
+    def _move_summary(self, result):
+        captures = []
+        checks = []
+        checkmates = []
+        for piece_id, details in result.items():
+            for detail in details:
+                item = {
+                    "piece_id": piece_id,
+                    "to": detail.get("to"),
+                    "notation": detail.get("notation"),
+                }
+                if detail.get("is_capture"):
+                    item["capture_name"] = detail.get("capture_name")
+                    captures.append(item)
+                if detail.get("gives_check"):
+                    checks.append(item)
+                if detail.get("gives_checkmate"):
+                    checkmates.append(item)
+        return {
+            "capture_moves": captures,
+            "check_moves": checks,
+            "checkmate_moves": checkmates,
         }
 
     def _t_list_pieces_in_area(self, x_min=1, x_max=9, y_min=1, y_max=10, color="both"):

@@ -102,6 +102,18 @@ class ToolBoxTest(unittest.TestCase):
         self.assertEqual({m["to"] for m in moves}, {"1-3", "3-3"})
         self.assertIn("马八进七", [m["notation"] for m in moves])
 
+    def test_legal_moves_report_capture_check_and_mate(self):
+        game = Game(fen="4k4/9/2N3N2/9/9/9/9/9/9/KR7 w - - 0 1")
+        box = ToolBox(game, "red")
+        result = box.call("list_legal_moves", {"piece_id": "red_chariot_1"})
+        self.assertTrue(result["ok"], result)
+        details = result["moves"]["red_chariot_1"]
+        mating = [item for item in details if item.get("gives_checkmate")]
+        self.assertTrue(mating)
+        self.assertTrue(result["checkmate_moves"])
+        self.assertTrue(result["check_moves"])
+        self.assertIn("is_capture", details[0])
+
     def test_list_all_legal_moves(self):
         result = self.box.call("list_legal_moves")
         self.assertTrue(result["ok"])

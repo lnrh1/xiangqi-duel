@@ -53,9 +53,11 @@ start_simulation、end_simulation、define_tool。
 6. 想提议和棋用 offer_draw（可附 note）；对手提议时你也调用 offer_draw 就是同意。
 7. 想组合查询可以调用 define_tool 定义一个当前对局专用的组合工具；steps 只能引用内置工具，
    不能包含 define_tool，也不能与现有工具重名；自定义参数用 ${{参数名}} 传给子工具。
-8. 推演：只有 start_simulation 之后才生效，虚拟棋盘上双方棋子都能走，最多 8 步，
-   期间的 move / list_legal_moves 等都会自动切到虚拟棋盘，不影响真实对局；
-   推演完成后必须重新用 move 在真实棋盘落子。频繁推演会明显拖长一局的时间，慎用。
+8. 推演是本作最重要的能力之一，强烈建议在关键局面使用：
+   子力接触、兑子、将军、连续战术或看不清后续时，先 start_simulation，
+   在虚拟棋盘连续走 2-6 步，验证会不会被反将、丢子、被绝杀，或能否直接绝杀。
+   推演不影响真实棋局，也不消耗你的落子机会；关键手不推演等于少算好几步。
+   推演完成后必须重新用 move 在真实棋盘落子，不要每手都推演。
 """
 
 
@@ -200,11 +202,17 @@ class LLMPlayer:
                     ],
                 }
             )
+            decision = None
             for call in result.tool_calls:
-                outcome = self.toolbox.call(call.name, call.arguments)
+                try:
+                    outcome = self.toolbox.call(call.name, call.arguments)
+                except Exception as exc:  # noqa: BLE001 - never leave a dangling tool_call
+                    outcome = {"ok": False, "error": "工具执行异常：%s" % (exc,)}
+                if not isinstance(outcome, dict):
+                    outcome = {"ok": False, "error": "工具返回了非对象结果"}
                 content = json.dumps(outcome, ensure_ascii=False)
-                if len(content) > 4000:
-                    content = content[:4000] + "...(truncated)"
+                if len(content) > 12000:
+                    content = content[:12000] + "...(truncated)"
                 block.append(
                     {
                         "role": "tool",
@@ -230,30 +238,33 @@ class LLMPlayer:
                         "snapshot": self._sim_snapshot(),
                     }
                 )
-                if call.name == "move" and outcome.get("ok"):
-                    if outcome.get("simulated"):
-                        continue
-                    piece_id, to = self.toolbox.pending
-                    self.sim = None
-                    self.emit({"type": "sim", "side": self.side, "snapshot": None})
-                    return self._decision(
-                        piece_id=piece_id,
-                        to=to,
-                        comment=last_text,
-                        steps=step,
-                    )
                 if call.name == "note" and outcome.get("ok"):
                     text = str((call.arguments or {}).get("text", "")).strip()
                     if text:
                         self.notes.append(text[:120])
                         self.notes = self.notes[-10:]
-                if call.name == "resign" and outcome.get("ok"):
+                if decision is None and call.name == "move" and outcome.get("ok"):
+                    if not outcome.get("simulated") and self.toolbox.pending:
+                        piece_id, to = self.toolbox.pending
+                        decision = ("move", piece_id, to)
+                if decision is None and call.name == "resign" and outcome.get("ok"):
+                    decision = ("resign", self.toolbox.resign_reason or "认输")
+            if decision is not None:
+                if decision[0] == "move":
+                    self.sim = None
+                    self.emit({"type": "sim", "side": self.side, "snapshot": None})
                     return self._decision(
-                        resign=True,
-                        resign_reason=self.toolbox.resign_reason or "认输",
-                        comment=last_text or "认输",
+                        piece_id=decision[1],
+                        to=decision[2],
+                        comment=last_text,
                         steps=step,
                     )
+                return self._decision(
+                    resign=True,
+                    resign_reason=decision[1],
+                    comment=last_text or "认输",
+                    steps=step,
+                )
             messages = self._messages()
 
         return self._abort(last_text, error="no move")
@@ -326,7 +337,36 @@ class LLMPlayer:
         return self.sim.snapshot() if self.sim is not None else None
 
     def _messages(self):
-        return [message for block in self.blocks for message in block]
+        messages = [message for block in self.blocks for message in block]
+        repaired = []
+        index = 0
+        while index < len(messages):
+            message = messages[index]
+            repaired.append(message)
+            index += 1
+            if message.get("role") != "assistant" or not message.get("tool_calls"):
+                continue
+            expected = [str(call.get("id") or "") for call in message.get("tool_calls") or []]
+            seen = set()
+            while index < len(messages) and messages[index].get("role") == "tool":
+                tool_message = messages[index]
+                seen.add(str(tool_message.get("tool_call_id") or ""))
+                repaired.append(tool_message)
+                index += 1
+            for call_id in expected:
+                if call_id and call_id not in seen:
+                    repaired.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "name": "unknown",
+                            "content": json.dumps(
+                                {"ok": False, "error": "工具结果缺失，已跳过"},
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
+        return repaired
 
     def _drain_inbox(self, block):
         while True:

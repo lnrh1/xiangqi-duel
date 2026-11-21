@@ -30,6 +30,41 @@ def config():
 
 
 class LLMPlayerTest(unittest.TestCase):
+    def test_multiple_tool_calls_all_get_tool_messages(self):
+        client = FakeClient(
+            [
+                ChatResult(
+                    tool_calls=[
+                        ToolCall("m1", "move", {"piece_id": "red_horse_1", "to": "c2"}),
+                        ToolCall("l1", "list_pieces", {"color": "red"}),
+                    ]
+                )
+            ]
+        )
+        player = LLMPlayer("red", client, config())
+        decision = player.choose(Game())
+        self.assertEqual(decision.piece_id, "red_horse_1")
+        messages = player._messages()
+        assistant = [m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")][-1]
+        expected = [call["id"] for call in assistant["tool_calls"]]
+        responded = [
+            m.get("tool_call_id")
+            for m in messages
+            if m.get("role") == "tool" and m.get("tool_call_id") in expected
+        ]
+        self.assertEqual(sorted(responded), sorted(expected))
+
+    def test_messages_repair_missing_tool_result(self):
+        player = LLMPlayer("red", FakeClient([]), config())
+        player.blocks = [[
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "missing", "name": "list_pieces", "arguments": {}},
+            ]},
+        ]]
+        repaired = player._messages()
+        self.assertEqual(repaired[-1]["role"], "tool")
+        self.assertEqual(repaired[-1]["tool_call_id"], "missing")
+
     def test_custom_tools_survive_rematch_reset(self):
         player = LLMPlayer("red", FakeClient([]), config())
         player.custom_tools = {"get_information": {"name": "get_information"}}

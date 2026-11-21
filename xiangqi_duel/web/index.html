@@ -101,12 +101,24 @@
   }
   .side-col.hidden { display: none; }
   .trace-panel {
+    position: relative;
     background: linear-gradient(180deg, var(--panel), #1d1813);
     border: 1px solid var(--line); border-radius: 18px; padding: 12px;
     display: flex; flex-direction: column; gap: 10px;
     flex: 1; min-height: 200px; height: auto;
   }
   .trace-panel.hidden { display: none; }
+  #pane-trace { position: relative; }
+  .trace-jump {
+    position: absolute; right: 16px; bottom: 14px; z-index: 8;
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid rgba(217, 164, 65, .55);
+    background: rgba(28, 22, 17, .94); color: var(--accent);
+    font-size: 16px; line-height: 1; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+  }
+  .trace-jump:hover { border-color: var(--accent); }
+  .trace-jump.hidden { display: none; }
   .art-stage {
     flex: 0 0 auto; height: min(34vh, 370px);
     display: none; align-items: flex-end; justify-content: center;
@@ -684,6 +696,7 @@
     <aside class="trace-panel" id="panel-red">
       <div class="panel-head" id="panel-head-red"></div>
       <div class="trace" id="trace-list-red"></div>
+      <button class="trace-jump hidden" data-target="trace-list-red" title="回到底部">↓</button>
     </aside>
     <div class="art-stage" id="art-stage-red"></div>
     <div class="art-info hidden" id="art-info-red"></div>
@@ -734,7 +747,7 @@
         </form>
         <p class="hint" id="chat-hint"></p>
       </div>
-      <div id="pane-trace" class="pane"><div class="trace" id="trace-list"></div></div>
+      <div id="pane-trace" class="pane"><div class="trace" id="trace-list"></div><button class="trace-jump hidden" data-target="trace-list" title="回到底部">↓</button></div>
     </aside>
 
 
@@ -742,6 +755,7 @@
     <aside class="trace-panel" id="panel-black">
       <div class="panel-head" id="panel-head-black"></div>
       <div class="trace" id="trace-list-black"></div>
+      <button class="trace-jump hidden" data-target="trace-list-black" title="回到底部">↓</button>
     </aside>
     <div class="art-stage" id="art-stage-black"></div>
     <div class="art-info hidden" id="art-info-black"></div>
@@ -945,6 +959,7 @@
     openTraces: {},
     movesSignature: "",
     traceSignature: "",
+    traceStick: {},
     lastTurn: null,
     settingsFromHome: false,
     artEnabled: true,
@@ -1032,6 +1047,7 @@
       state.lastPly = -1;
       state.movesSignature = "";
       state.traceSignature = "";
+      state.traceStick = {};
       state.pendingMove = false;
       state.postgameOpened = false;
       $('side-panel').classList.remove('open');
@@ -1481,6 +1497,39 @@
     return { all: $('trace-list') };
   }
 
+  function traceJumpButton(host) {
+    return document.querySelector('.trace-jump[data-target="' + host.id + '"]');
+  }
+
+  function traceShowJump(host, show) {
+    var button = traceJumpButton(host);
+    if (!button) { return; }
+    button.classList.toggle('hidden', !show || host.scrollHeight <= host.clientHeight + 4);
+  }
+
+  function traceAfterUpdate(host, previous) {
+    if (!host) { return; }
+    if (state.traceStick[host.id] !== false) {
+      host.scrollTop = host.scrollHeight;
+      traceShowJump(host, false);
+      return;
+    }
+    if (typeof previous === 'number') {
+      host.scrollTop = Math.min(previous, host.scrollHeight);
+    }
+    traceShowJump(host, true);
+  }
+
+  function bindTraceScroll(host) {
+    if (!host || host.dataset.traceBound) { return; }
+    host.dataset.traceBound = '1';
+    host.addEventListener('scroll', function () {
+      var near = host.scrollHeight - host.scrollTop - host.clientHeight < 48;
+      state.traceStick[host.id] = near;
+      traceShowJump(host, !near);
+    });
+  }
+
   function renderTrace(snap) {
     var targets = traceTargets(snap);
     var entries = (snap.trace || []).filter(function (e) { return e.kind !== 'llm_step'; });
@@ -1489,10 +1538,17 @@
     if (state.traceSignature === traceSig) { return; }
     state.traceSignature = traceSig;
     var keys = Object.keys(targets);
-    keys.forEach(function (key) { targets[key].innerHTML = ''; });
+    var previousScroll = {};
+    keys.forEach(function (key) {
+      previousScroll[key] = targets[key].scrollTop;
+      targets[key].innerHTML = '';
+    });
     if (!entries.length) {
       var empty = '<p class="empty">' + (snap.mode === 'human' ? '人机对弈中，AI 的思考与工具调用对你不可见。' : '等待 AI 落子…') + '</p>';
-      keys.forEach(function (key) { targets[key].innerHTML = empty; });
+      keys.forEach(function (key) {
+        targets[key].innerHTML = empty;
+        traceAfterUpdate(targets[key], previousScroll[key]);
+      });
       return;
     }
     var buckets = { all: '' };
@@ -1508,7 +1564,7 @@
     keys.forEach(function (key) {
       targets[key].innerHTML = buckets[key];
       restoreTraceOpen(targets[key]);
-      targets[key].scrollTop = targets[key].scrollHeight;
+      traceAfterUpdate(targets[key], previousScroll[key]);
     });
   }
 
@@ -1525,7 +1581,7 @@
     host.insertAdjacentHTML('beforeend', traceItemHtml(entry));
     while (host.children.length > 220) { host.removeChild(host.firstChild); }
     restoreTraceOpen(host);
-    host.scrollTop = host.scrollHeight;
+    traceAfterUpdate(host);
   }
 
   function applyThinkingDelta(event) {
@@ -1541,7 +1597,7 @@
       host.appendChild(bubble);
     }
     bubble.querySelector('.trace-text').textContent += event.text;
-    host.scrollTop = host.scrollHeight;
+    traceAfterUpdate(host);
   }
 
   // ---------------------------------------------------------------- human moves
@@ -2545,8 +2601,10 @@
 
   function renderReplayTrace(entries) {
     var list = $('trace-list');
+    var previous = list.scrollTop;
     if (!entries.length) {
       list.innerHTML = '<p class="empty">这一步还没有内部记录，点「下一步」继续</p>';
+      traceAfterUpdate(list, previous);
       return;
     }
     var html = '';
@@ -2560,7 +2618,7 @@
     });
     list.innerHTML = html;
     restoreTraceOpen(list);
-    list.scrollTop = list.scrollHeight;
+    traceAfterUpdate(list, previous);
   }
 
   function renderReplayChat(entries) {
@@ -3056,6 +3114,17 @@
     $('drawer-close').addEventListener('click', function () {
       $('side-panel').classList.remove('open');
     });
+    ['trace-list-red', 'trace-list-black', 'trace-list'].forEach(bindTraceScroll);
+    document.querySelectorAll('.trace-jump').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var host = $(button.getAttribute('data-target'));
+        if (!host) { return; }
+        state.traceStick[host.id] = true;
+        host.scrollTop = host.scrollHeight;
+        button.classList.add('hidden');
+      });
+    });
+
     $('btn-replay').addEventListener('click', enterReplay);
     $('rp-first').addEventListener('click', function () {
       if (state.replay.active) { state.replay.index = 0; renderReplay(); }
