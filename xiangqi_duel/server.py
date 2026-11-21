@@ -250,10 +250,6 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
-        elif path == "/webm-muxer.js":
-            self._static("webm-muxer.js")
-        elif path.startswith("/vendor/"):
-            self._static(path.lstrip("/"))
         elif path.startswith("/art/"):
             self._static(path.lstrip("/"))
         else:
