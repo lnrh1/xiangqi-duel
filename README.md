@@ -282,8 +282,7 @@ xiangqi_duel/
   cli.py          命令行入口
   web/index.html  前端（单文件，无构建）
   web/art/        模型立绘素材
-tests/            92 个单元 / 集成测试
-examples/         示例对局与离线回放
+tests/            124 个单元 / 集成测试
 ```
 
 ## 测试
@@ -294,11 +293,6 @@ python3 -m unittest discover -s tests -v
 
 覆盖规则与 perft、记谱、工具、引擎、代理循环、模型库、对局编排与 HTTP 接口。
 CI 配置在 [docs/ci-workflow.yml](docs/ci-workflow.yml)，复制到 `.github/workflows/ci.yml` 即可启用。
-
-## 示例对局
-
-- `examples/demo-game.json`：内置引擎自战 93 手（三次重复判和）及对应回放
-- `examples/deepseek-game.json`：真实 DeepSeek 自战 24 手，含中文思考与全部工具调用及回放
 
 ## English
 
